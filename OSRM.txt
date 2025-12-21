@@ -1,0 +1,26 @@
+How to reduce this by 90% (Must Read)
+You can drop this cost from $800 to $50 if you make these specific technical changes:
+
+Stop using Google Directions for Price Estimates:
+
+Solution: Use OSRM (Open Source Routing Machine). It is free and open-source. You can self-host it or use a cheap provider. It calculates distance/duration for the price estimation without charging you $0.005 every time.
+
+Saving: ~$300/month.
+
+Optimize "Places" Autocomplete:
+
+Solution: Use "Session Tokens" in Google Places. This groups a user's typing (e.g., "Alg...", "Algi...", "Algiers") into ONE billable request instead of 10.
+
+Saving: ~$150/month.
+
+Use PostGIS for "Nearest Driver":
+
+Do not use Google Distance Matrix to find the nearest driver.
+
+Use Supabase (PostgreSQL) ST_Distance query. It is extremely fast and free (included in your database usage).
+
+Alternatives:
+
+Consider using Mapbox for navigation and search. They have a generous free tier (usually first 50,000-100,000 requests are free).
+
+Recommendation: Start with Supabase ($25) + Google Maps ($200 credit). As soon as you hit 100 rides/day, switch your routing/directions logic to OSRM or you will burn money on Google API fees.

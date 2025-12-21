@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "YallaDZMobile",
-    "slug": "YallaDZMobile",
+    "name": "YallaDriver",
+    "slug": "yalladriver",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -20,11 +20,42 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "package": "com.yalladz.driver",
+      "googleServicesFile": "./google-services.json",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBmq7ZMAkkbnzvEywiWDlX1sO6Pu27sJrU"
+        }
+      },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification.png",
+          "color": "#ffffff",
+          "sounds": [
+            "./assets/push.wav"
+          ]
+        }
+      ],
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ad3c62b3-9ac2-4221-9364-c6259909d930"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ad3c62b3-9ac2-4221-9364-c6259909d930"
     }
   }
 }
