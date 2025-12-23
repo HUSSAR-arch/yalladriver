@@ -47,7 +47,7 @@ export const DriverRideControls: React.FC<Props> = ({
     return (
       <ActionButton
         label="ACCEPT RIDE"
-        color="#45986cff"
+        color="#51009cff"
         loading={loading}
         onPress={() => handleAction(rideApi.acceptRide, "ACCEPTED")}
       />

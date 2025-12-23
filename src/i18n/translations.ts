@@ -1,5 +1,9 @@
 export const translations = {
   en: {
+    newRideRequest: "New Ride Request",
+    enRoute: "En Route",
+    waiting: "Waiting",
+    onTrip: "On Trip",
     verificationPending: "Verification Required", // <--- ADD THIS
     verificationMsg: "Complete these steps to activate your driver account.", // <--- ADD THIS
     accountCreated: "Account Created", // <--- ADD THIS
@@ -219,6 +223,10 @@ export const translations = {
     tabEarnings: "EARNINGS",
   },
   ar: {
+    newRideRequest: "طلب رحلة جديدة",
+    enRoute: "في الطريق",
+    waiting: "في الانتظار",
+    onTrip: "في الرحلة",
     verificationPending: "جاري التحقق",
     verificationMsg: "شكراً لتسجيلك! حساب السائق الخاص بك قيد المراجعة حالياً.",
     verificationSubMsg:
@@ -433,6 +441,10 @@ export const translations = {
   },
 
   fr: {
+    newRideRequest: "Nouvelle demande de course",
+    enRoute: "En route",
+    waiting: "En attente",
+    onTrip: "En course",
     verificationPending: "Vérification en cours",
     verificationMsg:
       "Merci de votre inscription ! Votre compte est en cours d'examen.",

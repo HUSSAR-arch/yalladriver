@@ -119,7 +119,7 @@ export default function HistoryScreen({ navigation, route }: any) {
           style={[
             styles.status,
             item.status === "COMPLETED"
-              ? { color: "#45986cff" }
+              ? { color: "#51009cff" }
               : { color: "red" },
           ]}
         >

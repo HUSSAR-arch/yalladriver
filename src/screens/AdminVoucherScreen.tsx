@@ -74,7 +74,7 @@ export default function AdminVoucherScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <ShieldCheck size={28} color="#45986cff" />
+        <ShieldCheck size={28} color="#51009cff" />
         <Text style={styles.title}>Admin Console</Text>
       </View>
 
@@ -203,5 +203,5 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     letterSpacing: 1,
   },
-  amtText: { color: "#45986cff", fontWeight: "bold" },
+  amtText: { color: "#51009cff", fontWeight: "bold" },
 });

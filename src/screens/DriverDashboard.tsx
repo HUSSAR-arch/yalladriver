@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import RatingModal from "../components/RatingModal";
+import { useColorScheme } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useNavigation, NavigationProp } from "@react-navigation/native";
@@ -28,6 +29,7 @@ import {
   LayoutAnimation,
   UIManager,
   Easing,
+  Image,
 } from "react-native";
 
 // Add these with your other imports
@@ -43,6 +45,10 @@ import {
   CheckCircle,
   Menu,
   Star,
+  MessageSquare,
+  Moon,
+  Sun,
+  Shield,
 } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
 import { RideRequest, RideStatus } from "../types";
@@ -75,6 +81,8 @@ const SHADOW = {
 const { width, height } = Dimensions.get("window");
 const LOCATION_TASK_NAME = "background-location-task";
 const RING_SOUND = require("../../assets/push.wav");
+
+const WAIT_THRESHOLD = 10;
 
 // UI Helpers
 
@@ -171,6 +179,7 @@ const PrimaryButton = ({
   onPress,
   color = COLORS.primary,
   disabled = false,
+  style, // <--- 1. Add this param
 }: any) => (
   <TouchableOpacity
     onPress={onPress}
@@ -178,6 +187,7 @@ const PrimaryButton = ({
     style={[
       styles.btnBase,
       { backgroundColor: disabled ? COLORS.textLight : color },
+      style, // <--- 2. Add this here to allow overrides
     ]}
   >
     <Text style={styles.btnTextPrimary}>{title}</Text>
@@ -213,6 +223,10 @@ export default function DriverDashboard({ session, navigation }: any) {
   const { t, language } = useLanguage();
   const [fontsLoaded, setFontsLoaded] = useState(false);
   const insets = useSafeAreaInsets();
+
+  const theme = useColorScheme();
+
+  const polylineColor = theme === "dark" ? "#8ceebaff" : "black";
 
   useEffect(() => {
     async function loadFonts() {
@@ -268,6 +282,14 @@ export default function DriverDashboard({ session, navigation }: any) {
   const [finishedRide, setFinishedRide] = useState<any>(null);
   const [isRatingVisible, setIsRatingVisible] = useState(false);
   const [finishedRideData, setFinishedRideData] = useState<any>(null);
+
+  const [isNightMode, setIsNightMode] = useState(false);
+  const [compassHeading, setCompassHeading] = useState(0);
+
+  const [offerStats, setOfferStats] = useState({
+    driverToPickup: { time: "", dist: "" },
+    pickupToDropoff: { time: "", dist: "" },
+  });
   // Refs
   const mapRef = useRef<MapView>(null);
   const sound = useRef<Audio.Sound | null>(null);
@@ -279,8 +301,11 @@ export default function DriverDashboard({ session, navigation }: any) {
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  const prevStatusRef = useRef<string | null>(null);
+  const progressAnim = useRef(new Animated.Value(1)).current;
+  const OFFER_DURATION = 30;
 
+  const prevStatusRef = useRef<string | null>(null);
+  const driverMarkerRef = useRef<any>(null);
   // --- CONSTANTS ---
   const CANCELLATION_REASONS = [
     { id: "TRAFFIC", label: t("heavyTraffic") || "Heavy Traffic" },
@@ -288,6 +313,65 @@ export default function DriverDashboard({ session, navigation }: any) {
     { id: "TOO_FAR", label: t("pickupTooFar") || "Pickup Too Far" },
     { id: "PERSONAL", label: t("personalReason") || "Personal Reason" },
   ];
+
+  const renderFloatingControls = () => {
+    if (!activeRide) return null;
+
+    return (
+      <View style={styles.lyftFloatingContainer}>
+        {/* Safety Shield */}
+        <TouchableOpacity
+          style={styles.lyftIconBtn}
+          onPress={() => setIsCancelModalVisible(true)}
+        >
+          <Shield size={24} color="#111827" />
+        </TouchableOpacity>
+
+        {/* NAVIGATE BUTTON - NOW USES INTERNAL MAP */}
+        <TouchableOpacity
+          style={[
+            styles.lyftNavigatePill,
+            isNavigationMode && { backgroundColor: "#3B82F6" },
+          ]}
+          onPress={() => {
+            if (isNavigationMode) {
+              setIsNavigationMode(false);
+              // ... existing zoom out logic ...
+            } else {
+              setIsNavigationMode(true);
+              if (location && mapRef.current) {
+                mapRef.current.animateCamera(
+                  {
+                    center: location.coords,
+                    heading: location.coords.heading || 0,
+                    pitch: 0, // <--- CHANGE THIS TO 0 (Top Down View)
+                    zoom: 18, // Adjusted zoom slightly for better 2D view
+                  },
+                  { duration: 1000 }
+                );
+              }
+            }
+          }}
+        >
+          <Navigation
+            size={20}
+            color={isNavigationMode ? "white" : "#111827"}
+            fill={isNavigationMode ? "white" : "#111827"}
+          />
+          <Text
+            style={{
+              fontFamily: "Tajawal_700Bold",
+              color: isNavigationMode ? "white" : "#111827",
+            }}
+          >
+            {isNavigationMode
+              ? t("stopNav") || "Exit Nav"
+              : t("navigate") || "Navigate"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
   const syncBackgroundLocationTask = async () => {
     try {
       // 1. Get User's Intent (Source of Truth)
@@ -537,7 +621,8 @@ export default function DriverDashboard({ session, navigation }: any) {
           );
           setRouteCoords(coords);
           mapRef.current?.fitToCoordinates(coords, {
-            edgePadding: { top: 50, right: 50, bottom: 200, left: 50 },
+            // CHANGE: Increase bottom padding to 450 (or height * 0.5)
+            edgePadding: { top: 50, right: 50, bottom: 450, left: 50 },
             animated: true,
           });
         }
@@ -569,27 +654,46 @@ export default function DriverDashboard({ session, navigation }: any) {
   }, [incomingOffer, activeRide]);
 
   // --- LOCATION LOGIC ---
+  // --- LOCATION LOGIC ---
   useEffect(() => {
-    // Foreground UI updates
     let sub: Location.LocationSubscription | null = null;
     const startWatch = async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
       sub = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 3000,
-          distanceInterval: 1,
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 1000,
+          distanceInterval: 2,
         },
         (loc) => {
+          // 1. Update the Car Marker (Sliding Animation)
+          if (driverMarkerRef.current) {
+            driverMarkerRef.current.animateMarkerToCoordinate(
+              {
+                latitude: loc.coords.latitude,
+                longitude: loc.coords.longitude,
+              },
+              1000 // Duration matches the update interval for smooth sliding
+            );
+          }
+
+          // 2. Save Location to State
           setLocation(loc);
+
+          // 3. UPDATE CAMERA (The "Follow Me" Logic)
+          // We check if "isNavigationMode" is true.
           if (isNavigationMode && mapRef.current) {
-            mapRef.current.animateCamera({
-              center: loc.coords,
-              heading: loc.coords.heading || 0,
-              pitch: 50,
-              zoom: 18,
-            });
+            mapRef.current.animateCamera(
+              {
+                center: {
+                  latitude: loc.coords.latitude,
+                  longitude: loc.coords.longitude,
+                },
+                heading: loc.coords.heading || 0, // Rotate map with car
+                pitch: 50, // 3D Tilt for better view
+                zoom: 17, // Consistent Zoom
+              },
+              { duration: 1000 } // Smooth camera slide matching the marker
+            );
           }
         }
       );
@@ -598,7 +702,7 @@ export default function DriverDashboard({ session, navigation }: any) {
     return () => {
       if (sub) sub.remove();
     };
-  }, [isNavigationMode]);
+  }, [isNavigationMode]); // <--- Crucial: Re-runs when mode toggles
 
   useEffect(() => {
     if (isOnline && !activeRide && !incomingOffer) {
@@ -628,6 +732,14 @@ export default function DriverDashboard({ session, navigation }: any) {
   useEffect(() => {
     if (!mapRef.current || !location) return;
 
+    // Define the safe area for the map (pushes content up)
+    const MAP_EDGE_PADDING = {
+      top: 100,
+      right: 50,
+      bottom: 450, // <--- INCREASED from 350 to 450 to clear the new sheet
+      left: 50,
+    };
+
     // CASE 1: Incoming Offer (Show Pickup vs Driver)
     if (incomingOffer) {
       mapRef.current.fitToCoordinates(
@@ -642,7 +754,7 @@ export default function DriverDashboard({ session, navigation }: any) {
           },
         ],
         {
-          edgePadding: { top: 100, right: 50, bottom: 350, left: 50 }, // Bottom padding for sheet
+          edgePadding: MAP_EDGE_PADDING,
           animated: true,
         }
       );
@@ -650,7 +762,7 @@ export default function DriverDashboard({ session, navigation }: any) {
     // CASE 2: Active Ride (Show Route)
     else if (activeRide && routeCoords.length > 0) {
       mapRef.current.fitToCoordinates(routeCoords, {
-        edgePadding: { top: 100, right: 50, bottom: 350, left: 50 },
+        edgePadding: MAP_EDGE_PADDING,
         animated: true,
       });
     }
@@ -688,6 +800,97 @@ export default function DriverDashboard({ session, navigation }: any) {
       supabase.removeChannel(channel);
     };
   }, [session.user.id]);
+  useEffect(() => {
+    if (!incomingOffer || !location) return;
+
+    const fetchEstimates = async () => {
+      try {
+        // 1. Define the two routes we need
+        // Route A: Driver (Current Location) -> Pickup
+        const toPickupUrl = `https://router.project-osrm.org/route/v1/driving/${location.coords.longitude},${location.coords.latitude};${incomingOffer.pickup_lng},${incomingOffer.pickup_lat}?overview=false`;
+
+        // Route B: Pickup -> Dropoff
+        const tripUrl = `https://router.project-osrm.org/route/v1/driving/${incomingOffer.pickup_lng},${incomingOffer.pickup_lat};${incomingOffer.dropoff_lng},${incomingOffer.dropoff_lat}?overview=false`;
+
+        // 2. Fetch both in parallel
+        const [pickupRes, tripRes] = await Promise.all([
+          fetch(toPickupUrl),
+          fetch(tripUrl),
+        ]);
+
+        const pickupJson = await pickupRes.json();
+        const tripJson = await tripRes.json();
+
+        // 3. Format Function (Seconds -> Mins, Meters -> Km)
+        const format = (route: any) => {
+          if (!route) return { time: "--", dist: "--" };
+          const mins = Math.round(route.duration / 60);
+          const dist = (route.distance / 1000).toFixed(1);
+          return { time: `${mins} min`, dist: `${dist} km` };
+        };
+
+        // 4. Update State
+        setOfferStats({
+          driverToPickup: format(pickupJson.routes?.[0]),
+          pickupToDropoff: format(tripJson.routes?.[0]),
+        });
+      } catch (error) {
+        console.error("Estimate Calc Error:", error);
+      }
+    };
+
+    fetchEstimates();
+  }, [incomingOffer]);
+
+  useEffect(() => {
+    if (incomingOffer) {
+      // 1. Reset bar to full
+      progressAnim.setValue(1);
+
+      // 2. Animate to empty over OFFER_DURATION
+      Animated.timing(progressAnim, {
+        toValue: 0,
+        duration: OFFER_DURATION * 1000, // Convert to ms
+        easing: Easing.linear,
+        useNativeDriver: false, // 'width' property does not support native driver
+      }).start();
+    } else {
+      // Stop/Reset if offer is accepted/rejected
+      progressAnim.setValue(1);
+    }
+  }, [incomingOffer]);
+
+  useEffect(() => {
+    let headingSubscriber: any;
+
+    const startCompass = async () => {
+      // Check permissions (usually included with location)
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") return;
+
+      headingSubscriber = await Location.watchHeadingAsync((newHeading) => {
+        setCompassHeading(newHeading.magHeading);
+      });
+    };
+
+    startCompass();
+
+    return () => {
+      if (headingSubscriber) {
+        headingSubscriber.remove();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    // Automatically turn ON navigation mode when a ride is active
+    if (
+      activeRide &&
+      (activeRide.status === "ACCEPTED" || activeRide.status === "IN_PROGRESS")
+    ) {
+      setIsNavigationMode(true);
+    }
+  }, [activeRide?.status]);
 
   useEffect(() => {
     const DEBT_LIMIT = -2000;
@@ -933,9 +1136,13 @@ export default function DriverDashboard({ session, navigation }: any) {
       .select("*")
       .eq("id", offer.ride_id)
       .single();
+
     if (data && data.status === RideStatus.PENDING) {
       setIncomingOffer(data);
-      setOfferTimer(15);
+      setOfferTimer(30); // Set this to your desired timeout (e.g., 30 seconds)
+
+      // ⬇️ ADD THIS LINE ⬇️
+      fetchPassengerDetails(data.passenger_id);
     }
   };
 
@@ -1123,425 +1330,536 @@ export default function DriverDashboard({ session, navigation }: any) {
   // --- ANIMATIONS ---
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
+      // 1. Allow touches to pass through initially (so buttons work)
+      onStartShouldSetPanResponder: () => false,
+
+      // 2. Only claim the touch if the user DRAGS more than 10 pixels
       onMoveShouldSetPanResponder: (_, { dy }) => Math.abs(dy) > 10,
-      onPanResponderMove: (_, { dy }) => {
-        if (dy > 0) panY.setValue(dy);
+
+      onPanResponderGrant: () => {
+        // Optional: Visual feedback when drag starts
+        panY.setOffset(panY._value);
+        panY.setValue(0);
       },
+
+      onPanResponderMove: (_, { dy }) => {
+        // Prevent dragging UP too far (negative values) if you want
+        // Or just let it follow the finger:
+        if (dy > -50) panY.setValue(dy);
+      },
+
       onPanResponderRelease: (_, { dy }) => {
-        if (dy > 100)
+        panY.flattenOffset(); // Merge offset
+
+        // If dragged down significantly (>100), minimize
+        if (dy > 100) {
           Animated.spring(panY, {
-            toValue: 280,
+            toValue: 280, // Minimize position
             useNativeDriver: true,
+            friction: 8,
           }).start();
-        else
-          Animated.spring(panY, { toValue: 0, useNativeDriver: true }).start();
+        } else {
+          // Otherwise snap back to top
+          Animated.spring(panY, {
+            toValue: 0,
+            useNativeDriver: true,
+            friction: 8,
+          }).start();
+        }
       },
     })
   ).current;
 
   // --- RENDER HELPERS ---
 
-  const renderHeader = () => (
-    <View
-      style={[
-        styles.headerContainer,
-        { flexDirection: flexDir, top: insets.top + 10 },
-      ]}
-    >
-      {/* LEFT SIDE */}
-      <TouchableOpacity
-        style={styles.menuBtn}
-        onPress={() => navigation.navigate("MenuScreen", { session })}
-      >
-        <Menu size={24} color={"#45986cff"} />
-      </TouchableOpacity>
+  const renderHeader = () => {
+    // 1. IF RIDE IS ACTIVE: Show Lyft-style Top Banner (Location)
+    if (activeRide) {
+      const isPickup =
+        activeRide.status === RideStatus.ACCEPTED ||
+        activeRide.status === RideStatus.ARRIVED;
+      const title = isPickup
+        ? t("pickUpAt") || "Pick up at"
+        : t("dropOffAt") || "Drop off at";
+      const address = isPickup
+        ? activeRide.pickup_address
+        : activeRide.dropoff_address;
 
-      {/* RIGHT SIDE (Spacer pushes these to the end) */}
-      <View style={{ flex: 1 }} />
+      return (
+        <View style={[styles.lyftTopBanner, { top: insets.top + 10 }]}>
+          <View
+            style={{
+              backgroundColor: "rgba(255,255,255,0.2)",
+              padding: 8,
+              borderRadius: 8,
+            }}
+          >
+            <MapPin size={24} color="white" />
+          </View>
+          <View style={styles.lyftBannerText}>
+            <Text style={styles.lyftBannerTitle}>
+              {activeRide.location_name || title}
+            </Text>
+            <Text style={styles.lyftBannerAddress} numberOfLines={1}>
+              {address}
+            </Text>
+          </View>
+        </View>
+      );
+    }
 
-      <TouchableOpacity onPress={handleToggleOnline} style={styles.headerPill}>
-        <View
-          style={[
-            styles.statusDot,
-            { backgroundColor: isOnline ? COLORS.success : COLORS.textLight },
-          ]}
-        />
-        <Text style={styles.headerText}>
-          {isOnline ? t("online") : t("offline")}
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        onPress={() => navigation.navigate("Wallet")}
-        style={styles.headerPill}
-      >
-        <Wallet size={16} color={COLORS.primary} />
-        <Text style={styles.headerText}>{Math.floor(balance)} DZD</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderActiveRideCard = () => {
-    // If we are offline/idle with no tasks, hide the sheet completely.
-    if (!incomingOffer && !activeRide) return null;
-
-    // Determine which "Mode" the sheet is in
-    const isOfferMode = !!incomingOffer;
-
+    // 2. DEFAULT HEADER (Online/Offline Toggle)
     return (
-      <Animated.View
+      <View
         style={[
-          styles.bottomSheet,
-          {
-            transform: [{ translateY: slideAnim }],
-            zIndex: 100,
-            // UPDATED: Add padding to bottom based on device safe area
-            paddingBottom: insets.bottom + 20,
-            marginBottom: 0, // Remove the old margin if you want it flush with bottom
-          },
+          styles.headerContainer,
+          { flexDirection: flexDir, top: insets.top + 10 },
         ]}
       >
-        {/* ============================================================
-            MODE A: INCOMING OFFER (The "Ring" Screen)
-           ============================================================ */}
-        {isOfferMode ? (
+        <TouchableOpacity
+          style={styles.menuBtn}
+          onPress={() => navigation.navigate("MenuScreen", { session })}
+        >
+          <Menu size={24} color={"#45986cff"} />
+        </TouchableOpacity>
+
+        <View style={{ flex: 1 }} />
+
+        <TouchableOpacity
+          onPress={handleToggleOnline}
+          style={styles.headerPill}
+        >
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: isOnline ? COLORS.success : COLORS.textLight },
+            ]}
+          />
+          <Text style={styles.headerText}>
+            {isOnline ? t("online") : t("offline")}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate("Wallet")}
+          style={styles.headerPill}
+        >
+          <Wallet size={16} color={COLORS.primary} />
+          <Text style={styles.headerText}>{Math.floor(balance)} DZD</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderActiveRideCard = () => {
+    // 1. If we are offline/idle with no tasks, hide the sheet completely.
+    if (!incomingOffer && !activeRide) return null;
+
+    const isOfferMode = !!incomingOffer;
+
+    // ============================================================
+    // MODE A: INCOMING OFFER (The "Ring" Screen)
+    // ============================================================
+    if (isOfferMode) {
+      return (
+        <Animated.View
+          style={[
+            styles.bottomSheet,
+            {
+              transform: [{ translateY: Animated.add(slideAnim, panY) }],
+              zIndex: 100,
+              paddingBottom: insets.bottom + 10,
+            },
+          ]}
+        >
           <View>
-            <View style={styles.modalHeaderColumn}>
-              {/* 1. Title - Apply textAlign */}
-              <Text style={[styles.modalTitle, { textAlign: textAlign }]}>
-                New Ride Request
-              </Text>
-
-              {/* 3. Countdown Progress Bar */}
-              <View style={styles.progressBarBackground}>
-                <View
-                  style={[
-                    styles.progressBarFill,
-                    {
-                      width: `${(offerTimer / TOTAL_OFFER_TIME) * 100}%`,
-                      backgroundColor:
-                        offerTimer < 5 ? COLORS.danger : "#9914aaff",
-                      // In RTL, bar should visually fill from Right to Left,
-                      // or just stay centered. Default LTR fill is usually fine,
-                      // but if you want it flipped: alignSelf: isRTL ? 'flex-end' : 'flex-start'
-                      alignSelf: isRTL ? "flex-end" : "flex-start",
-                    },
-                  ]}
-                />
-              </View>
-            </View>
-
-            {/* Price Estimate */}
-            <View style={styles.modalPriceBox}>
-              <Text style={styles.modalPriceLabel}>{t("earnings")}</Text>
-              <Text style={styles.modalPriceValue}>
-                {incomingOffer?.fare_estimate} DZD
-              </Text>
-            </View>
-
-            <View style={{ marginTop: 15, marginBottom: 5 }}>
-              {/* Pickup Row - Apply flexDir */}
+            {/* PRICE & RATING SECTION */}
+            <View style={{ marginBottom: 20, marginTop: 10 }}>
               <View
-                style={[
-                  styles.timelineRow,
-                  { flexDirection: flexDir, marginBottom: 8 },
-                ]}
+                style={{
+                  flexDirection: flexDir,
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 12,
+                }}
               >
-                <View
-                  style={[styles.timelineDot, { backgroundColor: "#426e00ff" }]}
-                />
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    styles.timelineText,
-                    // Apply textAlign, and flip margin logic
-                    {
-                      textAlign: textAlign,
-                      fontSize: 14,
-                      marginLeft: isRTL ? 0 : 10,
-                      marginRight: isRTL ? 10 : 0,
-                    },
-                  ]}
-                >
-                  {incomingOffer?.pickup_address || "Pickup Location"}
-                </Text>
-              </View>
-
-              {/* Dropoff Row - Apply flexDir */}
-              <View style={[styles.timelineRow, { flexDirection: flexDir }]}>
-                <View
-                  style={[styles.timelineDot, { backgroundColor: "orange" }]}
-                />
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    styles.timelineText,
-                    // Apply textAlign, and flip margin logic
-                    {
-                      textAlign: textAlign,
-                      fontSize: 14,
-                      marginLeft: isRTL ? 0 : 10,
-                      marginRight: isRTL ? 10 : 0,
-                    },
-                  ]}
-                >
-                  {incomingOffer?.dropoff_address || "Dropoff Location"}
-                </Text>
-              </View>
-            </View>
-
-            {/* Accept / Decline Buttons - Apply flexDir */}
-            <View style={[styles.modalBtnRow, { flexDirection: flexDir }]}>
-              <View style={{ flex: 1 }}>
-                <SecondaryButton
-                  title="Decline"
-                  color="#f2f2f2ff"
-                  onPress={handleDeclineOffer}
-                />
-              </View>
-              <View style={{ width: 15 }} />
-              <View style={{ flex: 1 }}>
-                <PrimaryButton
-                  title="Accept"
-                  onPress={handleAcceptOffer}
-                  color="#426e00ff"
-                />
-              </View>
-            </View>
-          </View>
-        ) : (
-          /* ============================================================
-             MODE B: ACTIVE RIDE (The "Job" Screen)
-             ============================================================ */
-          <View>
-            {/* Drag Handle (Visual cue) */}
-            <View style={styles.dragHandleArea}>
-              <View style={styles.dragHandle} />
-            </View>
-
-            {/* Status Header */}
-            <View style={[styles.sheetHeader, { flexDirection: flexDir }]}>
-              {/* Left Side (Task) - In RTL this moves to Right */}
-              <View style={{ alignItems: isRTL ? "flex-end" : "flex-start" }}>
-                <Text style={styles.sheetLabel}>{t("currentTask")}</Text>
-                <Text style={styles.sheetTitle}>
-                  {activeRide?.status === RideStatus.ACCEPTED
-                    ? t("enRouteToPickup")
-                    : activeRide?.status === RideStatus.ARRIVED
-                    ? t("waitingForPassenger")
-                    : t("driveToDest")}
-                </Text>
-              </View>
-
-              {/* Right Side (Price) - In RTL this moves to Left */}
-              <View style={{ alignItems: isRTL ? "flex-start" : "flex-end" }}>
-                <Text style={styles.sheetLabel}>{t("earnings")}</Text>
-                <Text style={styles.priceTextLarge}>
-                  {activeRide?.fare_estimate}{" "}
-                  <Text style={{ fontSize: 14 }}>DA</Text>
-                </Text>
-              </View>
-            </View>
-
-            {passengerDetails && (
-              <View style={[styles.passengerRow, { flexDirection: flexDir }]}>
-                <View style={styles.avatar}>
-                  <User size={24} color={COLORS.textLight} />
-                </View>
-                <View
-                  style={{
-                    flex: 1,
-                    marginHorizontal: 12,
-                    alignItems: isRTL ? "flex-end" : "flex-start",
-                  }}
-                >
-                  <Text style={styles.passengerName}>
-                    {passengerDetails.full_name}
-                  </Text>
-                  <Text style={styles.passengerPhone}>
-                    {passengerDetails.phone}
-                  </Text>
-
-                  {/* ADD THIS BLOCK FOR RATING */}
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 4,
-                      marginTop: 4,
-                    }}
+                {/* Price */}
+                <View>
+                  <Text
+                    style={[
+                      styles.modalPriceValue,
+                      { fontSize: 32, textAlign: textAlign },
+                    ]}
                   >
-                    <Star size={12} color="#F59E0B" fill="#F59E0B" />
+                    {incomingOffer?.fare_estimate}{" "}
                     <Text
                       style={{
-                        color: "#d1d5db",
-                        fontSize: 12,
-                        fontWeight: "bold",
+                        fontSize: 18,
+                        color: "#6B7280",
+                        fontFamily: "Tajawal_500Medium",
                       }}
                     >
-                      {passengerDetails.average_rating
-                        ? Number(passengerDetails.average_rating).toFixed(1)
-                        : "5.0"}
+                      DZD
                     </Text>
-                    <Text style={{ color: "#6b7280", fontSize: 10 }}>
-                      ({passengerDetails.rating_count || 0})
-                    </Text>
-                  </View>
-                  {/* END BLOCK */}
+                  </Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.callBtn}
-                  onPress={() =>
-                    Linking.openURL(`tel:${passengerDetails.phone}`)
-                  }
-                >
-                  <Phone size={20} color="white" />
-                </TouchableOpacity>
-              </View>
-            )}
 
-            {/* Active Target Address */}
-            <View style={[styles.addressBox, { flexDirection: flexDir }]}>
-              <MapPin size={20} color={COLORS.warning} />
-              <Text
-                style={[styles.addressText, { textAlign: textAlign }]}
-                numberOfLines={2}
-              >
-                {activeRide?.status === RideStatus.IN_PROGRESS
-                  ? activeRide.dropoff_address
-                  : activeRide?.pickup_address}
-              </Text>
-            </View>
-
-            {/* Waiting Timer (Only visible when Arrived) */}
-            {activeRide?.status === RideStatus.ARRIVED && (
-              <View
-                style={[
-                  styles.timerBox,
-                  { flexDirection: flexDir }, // Flip label and value
-                  waitTime > 300 && {
-                    borderColor: COLORS.success,
-                    backgroundColor: "#0bee84ff",
-                  },
-                ]}
-              >
-                <Text style={styles.timerLabel}>{t("waitTime")}</Text>
-                <Text
-                  style={[
-                    styles.timerValue,
-                    waitTime > 300 && { color: COLORS.success },
-                  ]}
-                >
-                  {Math.floor(waitTime / 60)}:
-                  {(waitTime % 60).toString().padStart(2, "0")}
-                </Text>
-              </View>
-            )}
-
-            {/* Primary Action Button */}
-            <View style={styles.actionRow}>
-              {/* (No layout changes needed here as it is a full width button) */}
-              {activeRide?.status === RideStatus.ACCEPTED && (
-                <PrimaryButton
-                  title={t("iHaveArrived") || "I Have Arrived"}
-                  onPress={() => updateRideStatus(RideStatus.ARRIVED)}
-                  color="#426e00ff"
-                />
-              )}
-              {activeRide?.status === RideStatus.ARRIVED && (
-                <PrimaryButton
-                  title={t("startTrip") || "Start Trip"}
-                  onPress={() => {
-                    setOtpInput("");
-                    setIsOtpModalVisible(true);
-                  }}
-                  color="#426e00ff"
-                />
-              )}
-              {activeRide?.status === RideStatus.IN_PROGRESS && (
-                <PrimaryButton
-                  title={t("completeTrip") || "Complete Trip"}
-                  onPress={() => {
-                    setCashCollected(
-                      activeRide.fare_estimate?.toString() || ""
-                    );
-                    setIsPaymentModalVisible(true);
-                  }}
-                  color="#426e00ff"
-                />
-              )}
-            </View>
-
-            {/* Secondary Actions (Navigation / Cancel) */}
-            {(() => {
-              const isChargeNoShow =
-                activeRide?.status === RideStatus.ARRIVED && waitTime > 10;
-
-              return (
+                {/* Rating */}
                 <View
-                  style={[
-                    styles.secondaryActionRow,
-                    { flexDirection: flexDir },
-                  ]}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 12,
+                    borderColor: "#e4e4e4ff",
+                  }}
                 >
-                  {/* Navigate Button */}
-                  <TouchableOpacity
-                    style={[
-                      styles.navBtn,
-                      isChargeNoShow ? styles.navBtnReducedWidth : {},
-                      // RTL FIX: We need to flip the internal content (Icon vs Text)
-                      { flexDirection: flexDir },
-                      // RTL FIX: In RTL mode, the margin should be on the Left, not Right
-                      isRTL
-                        ? { marginRight: 0, marginLeft: "4%" }
-                        : { marginRight: "4%", marginLeft: 0 },
-                    ]}
-                    onPress={() => {
-                      const lat =
-                        activeRide?.status === RideStatus.IN_PROGRESS
-                          ? activeRide.dropoff_lat
-                          : activeRide?.pickup_lat;
-                      const lng =
-                        activeRide?.status === RideStatus.IN_PROGRESS
-                          ? activeRide.dropoff_lng
-                          : activeRide?.pickup_lng;
-
-                      if (lat && lng) {
-                        Linking.openURL(
-                          `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`
-                        );
-                      }
+                  <Star size={18} color="#313131ff" fill="#313131ff" />
+                  <Text
+                    style={{
+                      marginHorizontal: 6,
+                      fontFamily: "Tajawal_700Bold",
+                      color: "#313131ff",
+                      fontSize: 16,
                     }}
                   >
-                    <Navigation size={18} color={COLORS.primary} />
-                    <Text style={[styles.navBtnText, { marginHorizontal: 8 }]}>
-                      {t("navigate")}
-                    </Text>
-                  </TouchableOpacity>
-
-                  {/* Cancel/Charge Button */}
-                  <TouchableOpacity
-                    style={[
-                      styles.cancelBtn,
-                      isChargeNoShow ? styles.chargeBtnWidth : {},
-                    ]}
-                    onPress={() =>
-                      isChargeNoShow
-                        ? handleCancel("PASSENGER_NO_SHOW")
-                        : setIsCancelModalVisible(true)
-                    }
+                    {passengerDetails?.average_rating
+                      ? Number(passengerDetails.average_rating).toFixed(1)
+                      : "5.0"}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: "#313131ff",
+                      fontFamily: "Tajawal_500Medium",
+                    }}
                   >
-                    <Text style={styles.cancelBtnText}>
-                      {isChargeNoShow ? t("chargeNoShow") : t("cancel")}
-                    </Text>
-                  </TouchableOpacity>
+                    ({passengerDetails?.rating_count || 0})
+                  </Text>
                 </View>
-              );
-            })()}
+              </View>
+
+              {/* Progress Bar */}
+              <View
+                style={{
+                  height: 6,
+                  backgroundColor: "#F3F4F6",
+                  borderRadius: 3,
+                  overflow: "hidden",
+                  marginBottom: 10,
+                }}
+              >
+                <Animated.View
+                  style={{
+                    height: "100%",
+                    borderRadius: 3,
+                    width: progressAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ["0%", "100%"],
+                    }),
+                    backgroundColor: progressAnim.interpolate({
+                      inputRange: [0, 0.2, 1],
+                      outputRange: ["#45986cff", "#45986cff", "#45986cff"],
+                    }),
+                  }}
+                />
+              </View>
+            </View>
+
+            {/* TIMELINE (Pickup/Dropoff) */}
+            <View style={styles.timelineContainer}>
+              {/* PICKUP */}
+              <View style={[styles.timelineRow, { flexDirection: flexDir }]}>
+                <View style={styles.timelineIconCol}>
+                  <View
+                    style={[
+                      styles.timelineDot1,
+                      { backgroundColor: "#45986cff" },
+                    ]}
+                  />
+                  <View style={styles.timelineLine} />
+                </View>
+                <View
+                  style={[
+                    styles.timelineTextContent,
+                    { alignItems: isRTL ? "flex-end" : "flex-start" },
+                  ]}
+                >
+                  <View
+                    style={{
+                      flexDirection: flexDir,
+                      justifyContent: "space-between",
+                      width: "100%",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text style={styles.timelineLabel}>
+                      {t("pickup") || "PICKUP"}
+                    </Text>
+                    <View
+                      style={{
+                        backgroundColor: "#ecfdf5",
+                        paddingHorizontal: 8,
+                        paddingVertical: 2,
+                        borderRadius: 4,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontFamily: "Tajawal_700Bold",
+                          color: "#059669",
+                        }}
+                      >
+                        {offerStats.driverToPickup.time} •{" "}
+                        {offerStats.driverToPickup.dist}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text
+                    style={[styles.timelineAddress, { textAlign: textAlign }]}
+                    numberOfLines={2}
+                  >
+                    {incomingOffer?.pickup_address}
+                  </Text>
+                </View>
+              </View>
+
+              {/* DROPOFF */}
+              <View style={[styles.timelineRow, { flexDirection: flexDir }]}>
+                <View style={styles.timelineIconCol}>
+                  <View
+                    style={[
+                      styles.timelineDot,
+                      { backgroundColor: "#9405b8ff" },
+                    ]}
+                  />
+                </View>
+                <View
+                  style={[
+                    styles.timelineTextContent,
+                    {
+                      paddingBottom: 0,
+                      alignItems: isRTL ? "flex-end" : "flex-start",
+                    },
+                  ]}
+                >
+                  <View
+                    style={{
+                      flexDirection: flexDir,
+                      justifyContent: "space-between",
+                      width: "100%",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text style={styles.timelineLabel}>
+                      {t("dropoff") || "DROPOFF"}
+                    </Text>
+                    <View
+                      style={{
+                        backgroundColor: "#f5f3ff",
+                        paddingHorizontal: 8,
+                        paddingVertical: 2,
+                        borderRadius: 4,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontFamily: "Tajawal_700Bold",
+                          color: "#7c3aed",
+                        }}
+                      >
+                        {offerStats.pickupToDropoff.time} •{" "}
+                        {offerStats.pickupToDropoff.dist}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text
+                    style={[styles.timelineAddress, { textAlign: textAlign }]}
+                    numberOfLines={2}
+                  >
+                    {incomingOffer?.dropoff_address}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* ACTION BUTTON */}
+            <View style={[styles.modalBtnRow, { flexDirection: flexDir }]}>
+              <PrimaryButton
+                title={t("acceptRide") || "Accept Ride"}
+                onPress={handleAcceptOffer}
+                color="#45986cff"
+                style={{ borderRadius: 50, height: 60 }}
+              />
+            </View>
           </View>
-        )}
-      </Animated.View>
+        </Animated.View>
+      );
+    }
+
+    // ============================================================
+    // MODE B: ACTIVE RIDE (The "Lyft" Style)
+    // ============================================================
+    return (
+      <>
+        {/* 1. FLOATING CONTROLS (Above Sheet) */}
+        {/* HERE IS THE FIX: We simply call the helper function. 
+            This avoids the hardcoded "Google Maps" bug you had here before. */}
+        {renderFloatingControls()}
+
+        {/* 2. BOTTOM SHEET */}
+        <Animated.View
+          style={[
+            styles.lyftSheetContainer,
+            {
+              transform: [{ translateY: slideAnim }],
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              paddingBottom: insets.bottom + 20,
+            },
+          ]}
+        >
+          {/* Drag Handle */}
+          <View style={{ alignItems: "center", marginBottom: 10 }}>
+            <View
+              style={{
+                width: 40,
+                height: 4,
+                backgroundColor: "#E5E7EB",
+                borderRadius: 2,
+              }}
+            />
+          </View>
+
+          {/* Passenger Row: Avatar - Name (Centered) - Call */}
+          <View style={[styles.lyftPassengerRow, { flexDirection: flexDir }]}>
+            {/* Avatar */}
+            <View style={styles.lyftAvatar}>
+              <User size={24} color="#4B5563" />
+            </View>
+
+            {/* Name & Rating */}
+            <View style={styles.lyftNameContainer}>
+              <Text style={styles.lyftName}>
+                {passengerDetails?.full_name || "Passenger"}
+              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 4,
+                  marginTop: 4,
+                }}
+              >
+                <Star size={12} color="#F59E0B" fill="#F59E0B" />
+                <Text
+                  style={{ fontFamily: "Tajawal_500Medium", color: "#6B7280" }}
+                >
+                  {passengerDetails?.average_rating
+                    ? Number(passengerDetails.average_rating).toFixed(1)
+                    : "5.0"}
+                </Text>
+                <Text style={{ fontSize: 12, color: "#9CA3AF" }}>
+                  • {passengerDetails?.rating_count || 0} rides
+                </Text>
+              </View>
+            </View>
+
+            {/* Call Button */}
+            <TouchableOpacity
+              style={styles.lyftCallBtn}
+              onPress={() => Linking.openURL(`tel:${passengerDetails?.phone}`)}
+            >
+              <Phone size={24} color="#111827" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Wait Time Indicator (Only when Arrived) */}
+          {activeRide?.status === RideStatus.ARRIVED && (
+            <View style={{ alignItems: "center", marginBottom: 15 }}>
+              <Text
+                style={{
+                  fontFamily: "Tajawal_700Bold",
+                  color: waitTime > 300 ? "#DC2626" : "#6B7280",
+                }}
+              >
+                {t("waitTime") || "Wait Time"}: {Math.floor(waitTime / 60)}:
+                {(waitTime % 60).toString().padStart(2, "0")}
+              </Text>
+            </View>
+          )}
+
+          {/* Main Action Button */}
+          {activeRide?.status === RideStatus.ACCEPTED && (
+            <PrimaryButton
+              title={t("iHaveArrived") || "Arrive"}
+              onPress={() => updateRideStatus(RideStatus.ARRIVED)}
+              color="#5b21b6" // Deep Purple like Lyft
+              style={{ borderRadius: 30, height: 60 }}
+            />
+          )}
+
+          {activeRide?.status === RideStatus.ARRIVED && (
+            <View>
+              <PrimaryButton
+                title={t("startTrip") || "Pick Up Passenger"}
+                onPress={() => {
+                  setOtpInput("");
+                  setIsOtpModalVisible(true);
+                }}
+                color="#5b21b6"
+                style={{ borderRadius: 30, height: 60 }}
+              />
+              {/* No Show Option */}
+              {waitTime >= WAIT_THRESHOLD && (
+                <TouchableOpacity
+                  style={{ marginTop: 15, alignItems: "center" }}
+                  onPress={() => {
+                    Alert.alert(
+                      "Charge No Show?",
+                      "Passenger will be charged a cancellation fee.",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        {
+                          text: "Charge",
+                          style: "destructive",
+                          onPress: async () => {
+                            // Your no-show logic here
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                >
+                  <Text
+                    style={{ color: "#DC2626", fontFamily: "Tajawal_700Bold" }}
+                  >
+                    Charge No Show
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {activeRide?.status === RideStatus.IN_PROGRESS && (
+            <PrimaryButton
+              title={t("completeTrip") || "Drop Off"}
+              onPress={() => {
+                setCashCollected(activeRide.fare_estimate?.toString() || "");
+                setIsPaymentModalVisible(true);
+              }}
+              color="#DC2626" // Red for dropoff action
+              style={{ borderRadius: 30, height: 60 }}
+            />
+          )}
+        </Animated.View>
+      </>
     );
   };
 
@@ -1558,47 +1876,139 @@ export default function DriverDashboard({ session, navigation }: any) {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
+      {/* Toggle Night Mode Button */}
+      <TouchableOpacity
+        style={[
+          styles.recenterBtn,
+          { top: insets.top + 140 }, // Place it below the Recenter button
+        ]}
+        onPress={() => setIsNightMode(!isNightMode)}
+      >
+        {isNightMode ? (
+          <Sun size={24} color="#F59E0B" />
+        ) : (
+          <Moon size={24} color={COLORS.primary} />
+        )}
+      </TouchableOpacity>
+
       {/* MAP LAYER */}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         provider={PROVIDER_GOOGLE}
-        customMapStyle={CUSTOM_MAP_STYLE}
-        showsUserLocation={true}
+        customMapStyle={isNightMode ? DARK_MAP_STYLE : CUSTOM_MAP_STYLE}
+        showsUserLocation={false}
+        // ADD THIS PROP:
+        mapPadding={{
+          top: 50, // Keep space at the top
+          right: 0,
+          // If we are in a ride, the bottom ~400px are covered by the sheet.
+          // We tell the map to ignore that area so the car centers ABOVE it.
+          bottom: activeRide || incomingOffer ? 450 : 0,
+          left: 0,
+        }}
         initialRegion={{
           latitude: location?.coords.latitude || 36.75,
           longitude: location?.coords.longitude || 3.05,
           latitudeDelta: 0.05,
           longitudeDelta: 0.05,
         }}
-        onTouchStart={() => setIsNavigationMode(false)}
+        onTouchStart={() => {
+          // If user touches map, stop auto-following
+          if (isNavigationMode) setIsNavigationMode(false);
+        }}
       >
         {routeCoords.length > 0 && (
-          <Polyline
-            coordinates={routeCoords}
-            strokeColor="#1d1d1dff"
-            strokeWidth={4}
-          />
-        )}
-        {activeRide && (
           <>
-            <Marker
-              coordinate={{
-                latitude: activeRide.pickup_lat,
-                longitude: activeRide.pickup_lng,
-              }}
-              pinColor="purple"
+            {/* 1. Outer Stroke (Border) */}
+
+            {/* 2. Inner Stroke (Fill) */}
+            <Polyline
+              coordinates={routeCoords}
+              strokeWidth={6}
+              strokeColor={polylineColor}
             />
-            <Marker
-              coordinate={{
-                latitude: activeRide.dropoff_lat,
-                longitude: activeRide.dropoff_lng,
-              }}
-              pinColor="black"
-            />
+            {/* --- 1. PICKUP MARKER (Passenger - Green Icon) --- */}
+            {(incomingOffer ||
+              (activeRide && activeRide.status !== RideStatus.IN_PROGRESS)) && (
+              <Marker
+                coordinate={{
+                  latitude:
+                    incomingOffer?.pickup_lat || activeRide?.pickup_lat || 0,
+                  longitude:
+                    incomingOffer?.pickup_lng || activeRide?.pickup_lng || 0,
+                }}
+                anchor={{ x: 0.5, y: 0.5 }}
+                zIndex={2}
+              >
+                {/* White Circle with Green Border & Green Icon */}
+                <View
+                  style={[
+                    styles.markerCircle,
+                    { backgroundColor: "white", borderColor: "#45986cff" },
+                  ]}
+                >
+                  <User size={24} color="#45986cff" fill="#45986cff" />
+                </View>
+              </Marker>
+            )}
+
+            {/* --- 2. DROPOFF MARKER (Destination) --- */}
+            {/* Always show if we have data */}
+            {(incomingOffer || activeRide) && (
+              <Marker
+                coordinate={{
+                  latitude:
+                    incomingOffer?.dropoff_lat || activeRide?.dropoff_lat || 0,
+                  longitude:
+                    incomingOffer?.dropoff_lng || activeRide?.dropoff_lng || 0,
+                }}
+                anchor={{ x: 0.5, y: 1 }} // Pin tip is at the bottom
+                zIndex={1}
+              >
+                <View style={styles.markerContainer}>
+                  <View
+                    style={[
+                      styles.markerCircle,
+                      { backgroundColor: "#111827", borderColor: "white" },
+                    ]}
+                  >
+                    <MapPin size={20} color="white" />
+                  </View>
+                  <View style={styles.markerArrow} />
+                </View>
+              </Marker>
+            )}
+
+            {/* CUSTOM DRIVER CAR ICON */}
+            {/* CUSTOM DRIVER ARROW (LYFT STYLE) */}
+            {location && (
+              <Marker
+                ref={driverMarkerRef}
+                coordinate={{
+                  latitude: location.coords.latitude,
+                  longitude: location.coords.longitude,
+                }}
+                flat={true}
+                rotation={location.coords.heading || 0}
+                anchor={{ x: 0.5, y: 0.5 }}
+                zIndex={999}
+              >
+                <Image
+                  source={require("../../assets/navigation_arrow.png")}
+                  style={{
+                    width: 50,
+                    height: 50,
+                    resizeMode: "contain",
+                  }}
+                />
+              </Marker>
+            )}
           </>
         )}
       </MapView>
+
+      {/* 2. NAVIGATION BUTTON (Stacked under Night Mode) */}
 
       {/* OVERLAYS */}
       {renderHeader()}
@@ -1913,29 +2323,37 @@ const styles = StyleSheet.create({
 
   // Bottom Sheet (Active Ride)
   bottomSheet: {
-    marginHorizontal: 10,
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "#2c2c2cff",
-    borderRadius: 25,
-    padding: 25,
-    paddingBottom: 0,
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 32, // More curvature for a modern feel
+    borderTopRightRadius: 32,
+    paddingHorizontal: 20, // consistent side padding
+    paddingTop: 16,
     zIndex: 100,
-    elevation: 20,
+    // sophisticated shadow (softer, more dispersed)
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    marginBottom: 70,
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 20,
   },
-  dragHandleArea: { width: "100%", alignItems: "center", paddingBottom: 15 },
+  dragHandleArea: {
+    width: "100%",
+    alignItems: "center",
+    paddingVertical: 25, // Adds a big invisible touch zone (easier to grab)
+    marginTop: -10, // Adjusts position so it doesn't look weird
+    marginBottom: 5,
+    backgroundColor: "transparent", // Ensures touches are registered
+    zIndex: 999, // Forces it to be on top of everything
+  },
   dragHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: COLORS.border,
-    borderRadius: 2,
+    width: 48,
+    height: 5,
+    backgroundColor: "#E5E7EB", // Lighter gray
+    borderRadius: 10,
   },
   sheetHeader: {
     flexDirection: "row",
@@ -1944,13 +2362,13 @@ const styles = StyleSheet.create({
   },
   sheetLabel: {
     fontSize: 12,
-    color: "#f2f2f2ff",
+    color: "#2c2c2cff",
     textTransform: "uppercase",
     fontFamily: "Tajawal_500Medium",
   },
   sheetTitle: {
     fontSize: 16,
-    color: "#f2f2f2ff",
+    color: "#2c2c2cff",
     fontFamily: "Tajawal_700Bold",
     marginTop: 4,
   },
@@ -1963,10 +2381,12 @@ const styles = StyleSheet.create({
   passengerRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
-    backgroundColor: "#2c2c2cff",
-    padding: 10,
+    marginBottom: 24,
+    backgroundColor: "#f5f4f4ff",
+    padding: 16,
+    borderColor: "#F3F4F6",
     borderRadius: 12,
+    // inner shadow
   },
   avatar: {
     width: 40,
@@ -1978,11 +2398,11 @@ const styles = StyleSheet.create({
   },
   passengerName: {
     fontFamily: "Tajawal_700Bold",
-    color: "#f2f2f2ff",
+    color: "#2c2c2cff",
   },
   passengerPhone: {
     fontSize: 12,
-    color: "#f2f2f2ff",
+    color: "#2c2c2cff",
     marginTop: 2,
     fontFamily: "Tajawal_400Regular",
   },
@@ -2004,7 +2424,7 @@ const styles = StyleSheet.create({
   addressText: {
     flex: 1,
     fontSize: 15,
-    color: "#f2f2f2ff",
+    color: "#2c2c2cff",
     fontFamily: "Tajawal_500Medium",
   },
 
@@ -2021,13 +2441,13 @@ const styles = StyleSheet.create({
   timerLabel: {
     fontSize: 14,
     fontFamily: "Tajawal_500Medium",
-    color: "#f2f2f2ff",
+    color: "#2c2c2cff",
   },
   timerValue: {
     fontSize: 18,
     fontFamily: "Tajawal_700Bold",
     fontVariant: ["tabular-nums"],
-    color: "#f2f2f2ff",
+    color: "#2c2c2cff",
   },
 
   actionRow: { marginBottom: 15 },
@@ -2070,11 +2490,17 @@ const styles = StyleSheet.create({
 
   // Buttons
   btnBase: {
-    height: 50,
-    borderRadius: 12,
+    height: 56, // Slightly taller
+    borderRadius: 16, // More rounded
     justifyContent: "center",
     alignItems: "center",
     width: "100%",
+    // Add shadow to buttons
+    shadowColor: "#45986cff", // Glow with the brand color
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   btnTextPrimary: {
     color: "white",
@@ -2101,7 +2527,7 @@ const styles = StyleSheet.create({
   },
   overlayCard: {
     position: "absolute",
-    backgroundColor: "#f2f2f2ff",
+    backgroundColor: "#2c2c2cff",
     width: "100%",
     borderRadius: 30,
     padding: 24,
@@ -2120,7 +2546,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontFamily: "Tajawal_800ExtraBold",
-    color: "#f2f2f2ff",
+    color: "#2c2c2cff",
   },
   modalTitleCentered: {
     fontSize: 20,
@@ -2135,37 +2561,91 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     fontFamily: "Tajawal_400Regular",
   },
-  modalPriceBox: { alignItems: "center", marginBottom: 25 },
+  modalPriceBox: {
+    alignItems: "center",
+    marginVertical: 20,
+  },
   modalPriceLabel: {
-    fontSize: 12,
-    color: "#f2f2f2ff",
-    fontFamily: "Tajawal_700Bold",
-    textTransform: "uppercase",
+    // New style for "Est. Price"
+    fontSize: 14,
+    color: "#6B7280",
+    fontFamily: "Tajawal_500Medium",
+    marginBottom: 4,
   },
   modalPriceValue: {
-    fontSize: 32,
-    color: "#f2f2f2ff",
+    fontSize: 36, // Bigger, bolder
+    color: "#525252ff",
     fontFamily: "Tajawal_800ExtraBold",
+    letterSpacing: -1, // Tighten numbers
   },
-  timelineContainer: { marginBottom: 25 },
-  timelineRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  timelineDot: { width: 12, height: 12, borderRadius: 6 },
+  timelineContainer: {
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#ebeaeaff",
+    borderRadius: 8,
+    marginBottom: 25,
+    backgroundColor: "#fafafa",
+  },
+  timelineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  timelineIconCol: {
+    width: 30, // Fixed width to align dots perfectly
+    alignItems: "center",
+    // Remove marginRight here, we will use gap in the row or margin on the text
+  },
+  timelineDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    zIndex: 2, // Keeps dot on top of the line
+  },
+  timelineDot1: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    zIndex: 2, // Keeps dot on top of the line
+    marginTop: 6,
+  },
   timelineLine: {
     width: 2,
-    height: 20,
-    backgroundColor: COLORS.border,
-    marginLeft: 5,
-    marginVertical: 2,
+    flex: 1, // Stretches to fill the height of the row
+    backgroundColor: "#E5E7EB",
+    marginTop: 20, // Slight overlap with top dot
+    marginBottom: -10, // Slight overlap with bottom dot area
+    zIndex: 1,
+  },
+
+  timelineTextContent: {
+    flex: 1,
+    paddingBottom: 30, // <--- THIS is the secret. It pushes the next row down while keeping the line growing.
+    marginStart: 12, // Replaces marginRight on icon for better RTL support
   },
   timelineText: {
     fontSize: 15,
-    color: "#f2f2f2ff",
+    color: "#2c2c2cff",
     flex: 1,
-    marginBottom: 20,
-    fontFamily: "Tajawal_400Regular",
+    fontFamily: "Tajawal_500Medium",
+  },
+  timelineLabel: {
+    fontSize: 13,
+    color: "#6B7280", // Lighter gray for better contrast
+    fontFamily: "Tajawal_700Bold", // Made Bold
+    marginBottom: 4,
+    textTransform: "uppercase", // MAKE IT STAND OUT
+  },
+
+  timelineAddress: {
+    fontSize: 15, // Increased from 15
+    color: "#111827",
+    fontFamily: "Tajawal_700Bold",
+    lineHeight: 24,
   },
   modalBtnRow: {
-    marginBottom: 50,
+    marginBottom: 20,
     flexDirection: "row",
     justifyContent: "space-between",
     width: "100%",
@@ -2209,6 +2689,175 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     textAlign: "center",
     fontFamily: "Tajawal_500Medium",
+  },
+  noteContainer: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    padding: 10,
+    borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: "rgba(94, 94, 94, 0.1)",
+  },
+  noteText: {
+    fontFamily: "Tajawal_500Medium",
+    fontSize: 14,
+    color: "#2c2c2cff",
+    flex: 1,
+    fontStyle: "italic",
+  },
+  markerContainer: { alignItems: "center" },
+  markerCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: "white",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  markerArrow: {
+    width: 0,
+    height: 0,
+    backgroundColor: "transparent",
+    borderStyle: "solid",
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderTopWidth: 10,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderTopColor: "#111827", // Matches dropoff color
+    marginTop: -2, // Pulls it up to touch the circle
+  },
+
+  lyftTopBanner: {
+    position: "absolute",
+    top: 60, // Adjust for safe area
+    left: 16,
+    right: 16,
+    backgroundColor: "#115e59", // Dark Teal/Green
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+    zIndex: 50,
+  },
+  lyftBannerText: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  lyftBannerTitle: {
+    color: "white",
+    fontSize: 18,
+    fontFamily: "Tajawal_700Bold",
+  },
+  lyftBannerAddress: {
+    color: "#ccfbf1", // Light teal text
+    fontSize: 13,
+    fontFamily: "Tajawal_500Medium",
+    marginTop: 2,
+  },
+
+  // Floating Buttons (Right Side)
+  lyftFloatingContainer: {
+    position: "absolute",
+    bottom: 240, // Pushes it above the bottom sheet
+    right: 16,
+    alignItems: "flex-end",
+    gap: 12,
+    zIndex: 50,
+  },
+  lyftIconBtn: {
+    width: 48,
+    height: 48,
+    backgroundColor: "white",
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  lyftNavigatePill: {
+    flexDirection: "row",
+    backgroundColor: "white",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 30,
+    alignItems: "center",
+    gap: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+
+  // Clean Bottom Sheet
+  lyftSheetContainer: {
+    backgroundColor: "white",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 40,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  lyftPassengerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 24,
+    marginTop: 8,
+  },
+  lyftAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  lyftNameContainer: {
+    alignItems: "center", // Center the name like Lyft
+    flex: 1,
+  },
+  lyftName: {
+    fontSize: 15,
+    fontFamily: "Tajawal_800ExtraBold",
+    color: "#111827",
+  },
+  lyftCallBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  lyftMainBtn: {
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#5b21b6", // Deep Purple
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
   },
 });
 
@@ -2316,5 +2965,85 @@ const CUSTOM_MAP_STYLE = [
     featureType: "transit",
     elementType: "labels.icon",
     stylers: [{ visibility: "on" }],
+  },
+];
+
+const DARK_MAP_STYLE = [
+  {
+    elementType: "geometry",
+    stylers: [{ color: "#242f3e" }],
+  },
+  {
+    elementType: "labels.text.stroke",
+    stylers: [{ color: "#242f3e" }],
+  },
+  {
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#746855" }],
+  },
+  {
+    featureType: "administrative.locality",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#d59563" }],
+  },
+  {
+    featureType: "poi",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#d59563" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [{ color: "#263c3f" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#6b9a76" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#38414e" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#212a37" }],
+  },
+  {
+    featureType: "road",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#9ca5b3" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [{ color: "#746855" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#1f2835" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#f3d19c" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#17263c" }],
+  },
+  {
+    featureType: "water",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#515c6d" }],
+  },
+  {
+    featureType: "water",
+    elementType: "labels.text.stroke",
+    stylers: [{ color: "#17263c" }],
   },
 ];
