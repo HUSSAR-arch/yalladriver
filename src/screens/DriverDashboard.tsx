@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { LinearGradient } from "expo-linear-gradient";
 import RatingModal from "../components/RatingModal";
 import { useColorScheme } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -60,7 +61,7 @@ const API_URL = "https://my-ride-service.onrender.com";
 // --- THEME CONSTANTS ---
 const COLORS = {
   primary: "#111827", // Dark Charcoal / Black
-  success: "#45986cff",
+  success: "#775BD4",
   danger: "#960082ff", // Red
   warning: "#F59E0B", // Amber
   background: "#F3F4F6", // Light Gray
@@ -226,7 +227,7 @@ export default function DriverDashboard({ session, navigation }: any) {
 
   const theme = useColorScheme();
 
-  const polylineColor = theme === "dark" ? "#8ceebaff" : "black";
+  const polylineColor = theme === "dark" ? "#8c40b8ff" : "black";
 
   useEffect(() => {
     async function loadFonts() {
@@ -305,6 +306,7 @@ export default function DriverDashboard({ session, navigation }: any) {
   const OFFER_DURATION = 30;
 
   const prevStatusRef = useRef<string | null>(null);
+  const hasFittedRoute = useRef(false);
   const driverMarkerRef = useRef<any>(null);
   // --- CONSTANTS ---
   const CANCELLATION_REASONS = [
@@ -331,7 +333,7 @@ export default function DriverDashboard({ session, navigation }: any) {
         <TouchableOpacity
           style={[
             styles.lyftNavigatePill,
-            isNavigationMode && { backgroundColor: "#3B82F6" },
+            isNavigationMode && { backgroundColor: "#8b5fc5ff" },
           ]}
           onPress={() => {
             if (isNavigationMode) {
@@ -409,6 +411,9 @@ export default function DriverDashboard({ session, navigation }: any) {
       console.error("Background Sync Error:", error);
     }
   };
+  useEffect(() => {
+    hasFittedRoute.current = false;
+  }, [activeRide?.status, incomingOffer?.id]);
 
   // --- EFFECTS: INITIALIZATION ---
   useEffect(() => {
@@ -592,50 +597,63 @@ export default function DriverDashboard({ session, navigation }: any) {
 
   // Route Fetching
   useEffect(() => {
-    if (!activeRide || !location) {
+    // 1. Exit if no location or no active tasks
+    if (!location || (!activeRide && !incomingOffer)) {
       setRouteCoords([]);
       lastRouteStatus.current = null;
       return;
     }
 
     const fetchRoute = async () => {
-      const targetLat =
-        activeRide.status === RideStatus.ACCEPTED ||
-        activeRide.status === RideStatus.ARRIVED
+      let targetLat, targetLng;
+
+      // CASE A: Incoming Offer -> Show route to Pickup
+      if (incomingOffer) {
+        targetLat = incomingOffer.pickup_lat;
+        targetLng = incomingOffer.pickup_lng;
+      }
+      // CASE B: Active Ride -> Logic depends on status
+      else if (activeRide) {
+        const isPickupPhase =
+          activeRide.status === RideStatus.ACCEPTED ||
+          activeRide.status === RideStatus.ARRIVED;
+
+        targetLat = isPickupPhase
           ? activeRide.pickup_lat
           : activeRide.dropoff_lat;
-      const targetLng =
-        activeRide.status === RideStatus.ACCEPTED ||
-        activeRide.status === RideStatus.ARRIVED
+        targetLng = isPickupPhase
           ? activeRide.pickup_lng
           : activeRide.dropoff_lng;
+      }
 
       try {
+        // Fetch route from Driver Location -> Target
         const response = await fetch(
           `https://router.project-osrm.org/route/v1/driving/${location.coords.longitude},${location.coords.latitude};${targetLng},${targetLat}?overview=full&geometries=geojson`
         );
         const json = await response.json();
+
         if (json.routes?.[0]) {
           const coords = json.routes[0].geometry.coordinates.map(
             (c: number[]) => ({ latitude: c[1], longitude: c[0] })
           );
           setRouteCoords(coords);
-          mapRef.current?.fitToCoordinates(coords, {
-            // CHANGE: Increase bottom padding to 450 (or height * 0.5)
-            edgePadding: { top: 50, right: 50, bottom: 450, left: 50 },
+
+          // Fit map to route (adding padding so it doesn't hide behind the modal)
+          /*mapRef.current?.fitToCoordinates(coords, {
+            edgePadding: { top: 100, right: 50, bottom: 450, left: 50 },
             animated: true,
           });
+          */
         }
       } catch (e) {
         console.error("Route Error", e);
       }
     };
 
-    if (activeRide.status !== lastRouteStatus.current) {
-      fetchRoute();
-      lastRouteStatus.current = activeRide.status;
-    }
-  }, [activeRide, location]);
+    // Run fetch
+    fetchRoute();
+  }, [activeRide, incomingOffer, location]);
 
   useEffect(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -672,7 +690,7 @@ export default function DriverDashboard({ session, navigation }: any) {
                 latitude: loc.coords.latitude,
                 longitude: loc.coords.longitude,
               },
-              1000 // Duration matches the update interval for smooth sliding
+              1000
             );
           }
 
@@ -680,7 +698,6 @@ export default function DriverDashboard({ session, navigation }: any) {
           setLocation(loc);
 
           // 3. UPDATE CAMERA (The "Follow Me" Logic)
-          // We check if "isNavigationMode" is true.
           if (isNavigationMode && mapRef.current) {
             mapRef.current.animateCamera(
               {
@@ -688,11 +705,11 @@ export default function DriverDashboard({ session, navigation }: any) {
                   latitude: loc.coords.latitude,
                   longitude: loc.coords.longitude,
                 },
-                heading: loc.coords.heading || 0, // Rotate map with car
-                pitch: 50, // 3D Tilt for better view
-                zoom: 17, // Consistent Zoom
+                heading: loc.coords.heading || 0,
+                pitch: 0, // <--- CHANGED FROM 50 TO 0 (Strict Top View)
+                zoom: 17,
               },
-              { duration: 1000 } // Smooth camera slide matching the marker
+              { duration: 1000 }
             );
           }
         }
@@ -702,7 +719,7 @@ export default function DriverDashboard({ session, navigation }: any) {
     return () => {
       if (sub) sub.remove();
     };
-  }, [isNavigationMode]); // <--- Crucial: Re-runs when mode toggles
+  }, [isNavigationMode]);
 
   useEffect(() => {
     if (isOnline && !activeRide && !incomingOffer) {
@@ -732,16 +749,20 @@ export default function DriverDashboard({ session, navigation }: any) {
   useEffect(() => {
     if (!mapRef.current || !location) return;
 
-    // Define the safe area for the map (pushes content up)
-    const MAP_EDGE_PADDING = {
-      top: 100,
+    // Define padding
+    const bottomPadding = incomingOffer ? 350 : 260;
+    const topPadding = activeRide ? insets.top + 120 : insets.top + 60;
+    const EDGE_PADDING = {
+      top: topPadding,
       right: 50,
-      bottom: 450, // <--- INCREASED from 350 to 450 to clear the new sheet
+      bottom: bottomPadding,
       left: 50,
     };
 
-    // CASE 1: Incoming Offer (Show Pickup vs Driver)
+    // CASE 1: Incoming Offer (Always show pickup & driver initially)
     if (incomingOffer) {
+      // We allow this to run to keep the offer in view,
+      // or you can use the same 'hasFittedRoute' logic if you want that static too.
       mapRef.current.fitToCoordinates(
         [
           {
@@ -753,28 +774,43 @@ export default function DriverDashboard({ session, navigation }: any) {
             longitude: incomingOffer.pickup_lng,
           },
         ],
-        {
-          edgePadding: MAP_EDGE_PADDING,
-          animated: true,
-        }
+        { edgePadding: EDGE_PADDING, animated: true }
       );
     }
-    // CASE 2: Active Ride (Show Route)
+
+    // CASE 2: Active Ride - FIT ROUTE ONLY ONCE
     else if (activeRide && routeCoords.length > 0) {
-      mapRef.current.fitToCoordinates(routeCoords, {
-        edgePadding: MAP_EDGE_PADDING,
-        animated: true,
-      });
+      // Check if we haven't fitted this route yet
+      if (!hasFittedRoute.current && !isNavigationMode) {
+        mapRef.current.fitToCoordinates(routeCoords, {
+          edgePadding: EDGE_PADDING,
+          animated: true,
+        });
+
+        // Mark as done so it doesn't auto-zoom again when route updates
+        hasFittedRoute.current = true;
+      }
     }
-    // CASE 3: Just Online/Idle (Follow Driver)
+
+    // CASE 3: Idle (Follow Driver)
     else if (isOnline && !activeRide && !incomingOffer) {
-      mapRef.current.animateCamera({
-        center: location.coords,
-        zoom: 16,
-        pitch: 0,
-      });
+      // Only center if we haven't touched the map (optional, strictly following requirement)
+      if (isNavigationMode) {
+        mapRef.current.animateCamera({
+          center: location.coords,
+          zoom: 15,
+          pitch: 0,
+        });
+      }
     }
-  }, [incomingOffer, activeRide, routeCoords, isOnline]); // Dependencies
+  }, [
+    incomingOffer,
+    activeRide,
+    routeCoords, // Note: routeCoords updates often, but 'hasFittedRoute' prevents re-zooming
+    isOnline,
+    isNavigationMode,
+    insets,
+  ]);
   // 2. Add this Effect to listen to Balance changes in real-time
   useEffect(() => {
     const channel = supabase
@@ -1162,28 +1198,40 @@ export default function DriverDashboard({ session, navigation }: any) {
     if (!incomingOffer) return;
 
     try {
-      // ✅ Using the Cloud URL
       const CLOUD_URL = "https://my-ride-service.onrender.com/rides/accept";
 
-      console.log("Accepting ride via:", CLOUD_URL);
-
+      // 1. Accept the ride
       const response = await fetch(CLOUD_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           rideId: incomingOffer.id,
           driverId: session.user.id,
         }),
       });
 
-      const data = await response.json();
+      if (!response.ok) throw new Error("Ride taken or unavailable");
 
-      if (!response.ok) {
-        throw new Error("Ride taken or unavailable");
+      // 2. ✅ FORCE IMMEDIATE LOCATION UPDATE (The Fix)
+      // This ensures the passenger sees the REAL location instantly
+      const loc = await getRobustCurrentLocation();
+      if (loc) {
+        await fetch(
+          "https://my-ride-service.onrender.com/rides/update-location",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              driverId: session.user.id,
+              lat: loc.coords.latitude,
+              lng: loc.coords.longitude,
+              heading: loc.coords.heading || 0,
+            }),
+          }
+        );
       }
 
+      // 3. Update UI State
       setIncomingOffer(null);
       setActiveRide({ ...incomingOffer, status: RideStatus.ACCEPTED });
       fetchPassengerDetails(incomingOffer.passenger_id);
@@ -1204,6 +1252,8 @@ export default function DriverDashboard({ session, navigation }: any) {
     });
   };
 
+  // DriverDashboard.tsx
+
   const updateRideStatus = async (status: RideStatus) => {
     if (!activeRide) return;
 
@@ -1215,7 +1265,6 @@ export default function DriverDashboard({ session, navigation }: any) {
     if (!endpoint) return;
 
     try {
-      // ✅ Using the Cloud URL
       const BASE_URL = "https://my-ride-service.onrender.com";
 
       const response = await fetch(`${BASE_URL}${endpoint}`, {
@@ -1227,8 +1276,10 @@ export default function DriverDashboard({ session, navigation }: any) {
         }),
       });
 
+      // ✅ 1. Parse the error message from the backend
       if (!response.ok) {
-        throw new Error("Failed to update status on server");
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to update status");
       }
 
       setActiveRide((prev: any) => ({ ...prev, status }));
@@ -1242,7 +1293,8 @@ export default function DriverDashboard({ session, navigation }: any) {
       }
     } catch (error: any) {
       console.error("Update Status Error:", error);
-      Alert.alert("Error", "Could not update ride status. Check internet.");
+      // ✅ 2. Show the ACTUAL error message
+      Alert.alert("Update Failed", error.message);
     }
   };
 
@@ -1386,25 +1438,43 @@ export default function DriverDashboard({ session, navigation }: any) {
         : activeRide.dropoff_address;
 
       return (
-        <View style={[styles.lyftTopBanner, { top: insets.top + 10 }]}>
+        <LinearGradient
+          // Same Lavender -> Purple Gradient
+          colors={["#7055c9ff", "#b486e7ff"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[
+            styles.lyftTopBanner,
+            {
+              top: insets.top + 10,
+              backgroundColor: "transparent", // Override the old green background
+            },
+          ]}
+        >
+          {/* Icon Container with slightly adjusted transparency */}
           <View
             style={{
-              backgroundColor: "rgba(255,255,255,0.2)",
+              backgroundColor: "rgba(255,255,255,0.25)",
               padding: 8,
               borderRadius: 8,
             }}
           >
             <MapPin size={24} color="white" />
           </View>
+
           <View style={styles.lyftBannerText}>
             <Text style={styles.lyftBannerTitle}>
               {activeRide.location_name || title}
             </Text>
-            <Text style={styles.lyftBannerAddress} numberOfLines={1}>
+            {/* Updated text color to white/light-purple to match background */}
+            <Text
+              style={[styles.lyftBannerAddress, { color: "#faf5ff" }]}
+              numberOfLines={1}
+            >
               {address}
             </Text>
           </View>
-        </View>
+        </LinearGradient>
       );
     }
 
@@ -1420,7 +1490,7 @@ export default function DriverDashboard({ session, navigation }: any) {
           style={styles.menuBtn}
           onPress={() => navigation.navigate("MenuScreen", { session })}
         >
-          <Menu size={24} color={"#45986cff"} />
+          <Menu size={24} color={"#775BD4"} />
         </TouchableOpacity>
 
         <View style={{ flex: 1 }} />
@@ -1474,13 +1544,13 @@ export default function DriverDashboard({ session, navigation }: any) {
         >
           <View>
             {/* PRICE & RATING SECTION */}
-            <View style={{ marginBottom: 20, marginTop: 10 }}>
+            <View style={{ marginBottom: 15, marginTop: 0 }}>
               <View
                 style={{
                   flexDirection: flexDir,
                   justifyContent: "space-between",
                   alignItems: "center",
-                  marginBottom: 12,
+                  marginBottom: -10,
                 }}
               >
                 {/* Price */}
@@ -1499,7 +1569,7 @@ export default function DriverDashboard({ session, navigation }: any) {
                         fontFamily: "Tajawal_500Medium",
                       }}
                     >
-                      DZD
+                      DA
                     </Text>
                   </Text>
                 </View>
@@ -1509,13 +1579,13 @@ export default function DriverDashboard({ session, navigation }: any) {
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
-                    paddingHorizontal: 10,
                     paddingVertical: 6,
-                    borderRadius: 12,
-                    borderColor: "#e4e4e4ff",
+                    borderRadius: 50,
+                    borderWidth: 0,
+                    borderColor: "#b9b8b8ff",
                   }}
                 >
-                  <Star size={18} color="#313131ff" fill="#313131ff" />
+                  <Star size={18} color="#fcc100ff" fill="#fcc100ff" />
                   <Text
                     style={{
                       marginHorizontal: 6,
@@ -1560,7 +1630,7 @@ export default function DriverDashboard({ session, navigation }: any) {
                     }),
                     backgroundColor: progressAnim.interpolate({
                       inputRange: [0, 0.2, 1],
-                      outputRange: ["#45986cff", "#45986cff", "#45986cff"],
+                      outputRange: ["#775BD4", "#775BD4", "#775BD4"],
                     }),
                   }}
                 />
@@ -1575,7 +1645,7 @@ export default function DriverDashboard({ session, navigation }: any) {
                   <View
                     style={[
                       styles.timelineDot1,
-                      { backgroundColor: "#45986cff" },
+                      { backgroundColor: "#775BD4" },
                     ]}
                   />
                   <View style={styles.timelineLine} />
@@ -1609,7 +1679,7 @@ export default function DriverDashboard({ session, navigation }: any) {
                         style={{
                           fontSize: 12,
                           fontFamily: "Tajawal_700Bold",
-                          color: "#059669",
+                          color: "#775BD3",
                         }}
                       >
                         {offerStats.driverToPickup.time} •{" "}
@@ -1688,12 +1758,35 @@ export default function DriverDashboard({ session, navigation }: any) {
 
             {/* ACTION BUTTON */}
             <View style={[styles.modalBtnRow, { flexDirection: flexDir }]}>
-              <PrimaryButton
-                title={t("acceptRide") || "Accept Ride"}
+              <TouchableOpacity
                 onPress={handleAcceptOffer}
-                color="#45986cff"
-                style={{ borderRadius: 50, height: 60 }}
-              />
+                activeOpacity={0.8}
+                style={{
+                  width: "100%",
+                  shadowColor: "#9405b8", // Purple shadow glow
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 8,
+                  elevation: 6,
+                }}
+              >
+                <LinearGradient
+                  // Gradient: Violet -> Dark Orchid
+                  colors={["#7055c9ff", "#b486e7ff"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{
+                    height: 60,
+                    borderRadius: 50,
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={styles.btnTextPrimary}>
+                    {t("acceptRide") || "Accept Ride"}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
             </View>
           </View>
         </Animated.View>
@@ -1797,12 +1890,34 @@ export default function DriverDashboard({ session, navigation }: any) {
 
           {/* Main Action Button */}
           {activeRide?.status === RideStatus.ACCEPTED && (
-            <PrimaryButton
-              title={t("iHaveArrived") || "Arrive"}
+            <TouchableOpacity
               onPress={() => updateRideStatus(RideStatus.ARRIVED)}
-              color="#5b21b6" // Deep Purple like Lyft
-              style={{ borderRadius: 30, height: 60 }}
-            />
+              activeOpacity={0.8}
+              style={{
+                width: "100%",
+                shadowColor: "#7055c9",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 8,
+                elevation: 6,
+              }}
+            >
+              <LinearGradient
+                colors={["#7055c9ff", "#b486e7ff"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{
+                  height: 60,
+                  borderRadius: 30,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <Text style={styles.btnTextPrimary}>
+                  {t("iHaveArrived") || "Arrive"}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
           )}
 
           {activeRide?.status === RideStatus.ARRIVED && (
@@ -1854,7 +1969,7 @@ export default function DriverDashboard({ session, navigation }: any) {
                 setCashCollected(activeRide.fare_estimate?.toString() || "");
                 setIsPaymentModalVisible(true);
               }}
-              color="#DC2626" // Red for dropoff action
+              color="#7055c9ff" // Red for dropoff action
               style={{ borderRadius: 30, height: 60 }}
             />
           )}
@@ -1898,13 +2013,16 @@ export default function DriverDashboard({ session, navigation }: any) {
         provider={PROVIDER_GOOGLE}
         customMapStyle={isNightMode ? DARK_MAP_STYLE : CUSTOM_MAP_STYLE}
         showsUserLocation={false}
-        // ADD THIS PROP:
+        // --- 2D ENFORCEMENT PROPS ---
+        pitchEnabled={false} // Prevents user from tilting with two fingers
+        showsBuildings={false} // Hides 3D building extrusions
+        showsIndoors={false} // Keeps map clean
+        // ---------------------------
+
         mapPadding={{
-          top: 50, // Keep space at the top
+          top: 50,
           right: 0,
-          // If we are in a ride, the bottom ~400px are covered by the sheet.
-          // We tell the map to ignore that area so the car centers ABOVE it.
-          bottom: activeRide || incomingOffer ? 450 : 0,
+          bottom: activeRide || incomingOffer ? 50 : 0,
           left: 0,
         }}
         initialRegion={{
@@ -1920,9 +2038,6 @@ export default function DriverDashboard({ session, navigation }: any) {
       >
         {routeCoords.length > 0 && (
           <>
-            {/* 1. Outer Stroke (Border) */}
-
-            {/* 2. Inner Stroke (Fill) */}
             <Polyline
               coordinates={routeCoords}
               strokeWidth={6}
@@ -1941,20 +2056,19 @@ export default function DriverDashboard({ session, navigation }: any) {
                 anchor={{ x: 0.5, y: 0.5 }}
                 zIndex={2}
               >
-                {/* White Circle with Green Border & Green Icon */}
+                {/* White Circle with Purple Border & Purple Icon */}
                 <View
                   style={[
                     styles.markerCircle,
-                    { backgroundColor: "white", borderColor: "#45986cff" },
+                    { backgroundColor: "white", borderColor: "#775BD4" },
                   ]}
                 >
-                  <User size={24} color="#45986cff" fill="#45986cff" />
+                  <User size={24} color="#775BD4" fill="#775BD4" />
                 </View>
               </Marker>
             )}
 
             {/* --- 2. DROPOFF MARKER (Destination) --- */}
-            {/* Always show if we have data */}
             {(incomingOffer || activeRide) && (
               <Marker
                 coordinate={{
@@ -1981,7 +2095,6 @@ export default function DriverDashboard({ session, navigation }: any) {
             )}
 
             {/* CUSTOM DRIVER CAR ICON */}
-            {/* CUSTOM DRIVER ARROW (LYFT STYLE) */}
             {location && (
               <Marker
                 ref={driverMarkerRef}
@@ -2023,7 +2136,6 @@ export default function DriverDashboard({ session, navigation }: any) {
           if (location)
             mapRef.current?.animateCamera({
               center: location.coords,
-              zoom: 17,
             });
         }}
       >
@@ -2101,7 +2213,6 @@ export default function DriverDashboard({ session, navigation }: any) {
         </Text>
 
         {/* Payment Display - Keep Centered, no change needed usually */}
-        <View style={styles.paymentDisplay}>{/* ... existing code ... */}</View>
 
         <TextInput
           style={[styles.otpInput, { textAlign: "center" }]}
@@ -2115,6 +2226,7 @@ export default function DriverDashboard({ session, navigation }: any) {
           <View style={{ flex: 1 }}>
             <SecondaryButton
               title={t("cancel")}
+              color="#6B7280"
               onPress={() => setIsPaymentModalVisible(false)}
             />
           </View>
@@ -2178,11 +2290,7 @@ async function registerForPushNotificationsAsync(userId: string) {
     await Notifications.setNotificationChannelAsync("ride-requests-v4", {
       name: "Ride Requests",
       importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: "#FF231F7C",
-      sound: "push.wav", // <--- MUST MATCH FILENAME EXACTLY
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      bypassDnd: true,
+      // Remove the 'sound' property or set it to null/default
     });
   }
 
@@ -2200,7 +2308,12 @@ async function registerForPushNotificationsAsync(userId: string) {
     }
 
     // Get the token
-    const token = (await Notifications.getExpoPushTokenAsync()).data;
+    const token = (
+      await Notifications.getExpoPushTokenAsync({
+        projectId: "ad3c62b3-9ac2-4221-9364-c6259909d930", // Ensure this matches your EAS Project ID in app.json
+      })
+    ).data;
+
     console.log("PUSH TOKEN:", token); // <--- Log this to debug
 
     // Save directly using the passed userId
@@ -2284,7 +2397,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: "#45986cff",
+    backgroundColor: "#775BD4",
     justifyContent: "center",
     alignItems: "center",
     ...SHADOW,
@@ -2330,8 +2443,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 32, // More curvature for a modern feel
     borderTopRightRadius: 32,
-    paddingHorizontal: 20, // consistent side padding
-    paddingTop: 16,
+    paddingHorizontal: 15, // consistent side padding
+    paddingTop: 0,
     zIndex: 100,
     // sophisticated shadow (softer, more dispersed)
     shadowColor: "#000",
@@ -2496,7 +2609,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     width: "100%",
     // Add shadow to buttons
-    shadowColor: "#45986cff", // Glow with the brand color
+    shadowColor: "#775BD4", // Glow with the brand color
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -2527,7 +2640,7 @@ const styles = StyleSheet.create({
   },
   overlayCard: {
     position: "absolute",
-    backgroundColor: "#2c2c2cff",
+    backgroundColor: "#e7e7e7ff",
     width: "100%",
     borderRadius: 30,
     padding: 24,
@@ -2575,7 +2688,7 @@ const styles = StyleSheet.create({
   modalPriceValue: {
     fontSize: 36, // Bigger, bolder
     color: "#525252ff",
-    fontFamily: "Tajawal_800ExtraBold",
+    fontFamily: "GoogleSans-Bold",
     letterSpacing: -1, // Tighten numbers
   },
   timelineContainer: {
@@ -2583,7 +2696,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#ebeaeaff",
     borderRadius: 8,
-    marginBottom: 25,
+    marginBottom: 10,
     backgroundColor: "#fafafa",
   },
   timelineRow: {
@@ -2645,7 +2758,7 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   modalBtnRow: {
-    marginBottom: 20,
+    marginBottom: 10,
     flexDirection: "row",
     justifyContent: "space-between",
     width: "100%",

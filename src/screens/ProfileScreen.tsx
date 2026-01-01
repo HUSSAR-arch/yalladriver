@@ -229,7 +229,7 @@ export default function ProfileScreen({ navigation, route }: any) {
                       navigation.navigate("EditDetailsScreen", { profile })
                     }
                   >
-                    <Edit size={20} color="#51009cff" />
+                    <Edit size={20} color="#45986cff" />
                   </TouchableOpacity>
                 </View>
 
@@ -275,7 +275,7 @@ export default function ProfileScreen({ navigation, route }: any) {
                 icon={
                   <Shield
                     size={18}
-                    color="#51009cff"
+                    color="#45986cff"
                     style={{ marginBottom: 4 }}
                   />
                 }
@@ -287,7 +287,7 @@ export default function ProfileScreen({ navigation, route }: any) {
             {/* --- 3. Vehicle Info --- */}
             {profile?.role === "DRIVER" && (
               <View style={[styles.infoBox, alignStyle.flexDirectionRow]}>
-                <Car size={24} color="#51009cff" />
+                <Car size={24} color="#45986cff" />
                 <View
                   style={{
                     flex: 1,
@@ -433,15 +433,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 15,
     borderWidth: 1,
-    borderColor: "#51009cff",
+    borderColor: "#45986cff",
   },
   infoTitle: {
-    color: "#51009cff",
+    color: "#45986cff",
     fontSize: 13,
     marginBottom: 2,
     fontFamily: "Tajawal-Bold",
   },
-  infoText: { color: "#51009cff", fontSize: 15, fontFamily: "Tajawal-Bold" },
+  infoText: { color: "#45986cff", fontSize: 15, fontFamily: "Tajawal-Bold" },
 
   // Menu Items
   menuContainer: {

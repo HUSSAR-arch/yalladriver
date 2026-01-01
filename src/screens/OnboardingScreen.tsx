@@ -352,10 +352,10 @@ export default function OnboardingScreen() {
 
         <View style={styles.contentCenter}>
           <View style={styles.logoCircle}>
-            <Car size={40} color="#51009cff" />
+            <Car size={40} color="#45986cff" />
           </View>
           <Text style={styles.title}>
-            Yalla<Text style={{ color: "#51009cff" }}>Driver</Text>
+            Yalla<Text style={{ color: "#45986cff" }}>Driver</Text>
           </Text>
           <Text style={styles.subtitle}>
             {t("welcomeTitle") || "Drive with confidence."}
@@ -457,7 +457,7 @@ export default function OnboardingScreen() {
             {!isLoginMode && signupStep === 2 && (
               <View style={styles.driverSection}>
                 <View style={styles.driverHeader}>
-                  <Car size={20} color="#51009cff" />
+                  <Car size={20} color="#45986cff" />
                   <Text style={styles.driverTitle}>Vehicle Details</Text>
                 </View>
 
@@ -848,7 +848,7 @@ const styles = StyleSheet.create({
     padding: 20,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#51009cff",
+    borderColor: "#45986cff",
     borderStyle: "dashed",
     marginTop: 10,
   },
@@ -869,19 +869,19 @@ const styles = StyleSheet.create({
   },
   helperText: { fontSize: 13, color: "#6B7280" },
   timerText: { fontSize: 13, color: "#9CA3AF" },
-  linkText: { fontSize: 13, color: "#51009cff", fontWeight: "600" },
+  linkText: { fontSize: 13, color: "#45986cff", fontWeight: "600" },
 
   // Buttons & Footer
   footer: { marginTop: "auto" },
   primaryButton: {
     flexDirection: "row",
-    backgroundColor: "#51009cff",
+    backgroundColor: "#45986cff",
     height: 58,
     borderRadius: 50,
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    shadowColor: "#51009cff",
+    shadowColor: "#45986cff",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
@@ -914,7 +914,7 @@ const styles = StyleSheet.create({
 
   switchButton: { alignItems: "center", padding: 10 },
   switchText: { color: "#6B7280", fontSize: 15 },
-  switchTextBold: { color: "#51009cff", fontWeight: "700" },
+  switchTextBold: { color: "#45986cff", fontWeight: "700" },
 
   // Modal Styles
   modalOverlay: {

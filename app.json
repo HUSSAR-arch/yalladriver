@@ -20,6 +20,15 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "POST_NOTIFICATIONS",
+        "WAKE_LOCK"
+      ],
       "package": "com.yalladz.driver",
       "googleServicesFile": "./google-services.json",
       "config": {
@@ -39,12 +48,17 @@
         {
           "icon": "./assets/notification.png",
           "color": "#ffffff",
-          "sounds": [
-            "./assets/push.wav"
-          ]
+          "sounds": ["./assets/push.wav"]
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ]
     ],
     "extra": {
       "eas": {

@@ -240,6 +240,8 @@ export default function App() {
     "Tajawal-Medium": Tajawal_500Medium,
     "Tajawal-Bold": Tajawal_700Bold,
     "Tajawal-ExtraBold": Tajawal_800ExtraBold,
+    "GoogleSans-Bold": require("./assets/fonts/GoogleSans-Bold.ttf"),
+    "GoogleSans-Bold": require("./assets/fonts/GoogleSans-Medium.ttf"),
   });
 
   if (!fontsLoaded) {

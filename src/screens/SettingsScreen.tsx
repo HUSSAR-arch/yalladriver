@@ -538,7 +538,7 @@ const styles = StyleSheet.create({
   },
   optionLabelSelected: {
     fontFamily: "Tajawal-Bold",
-    color: "#51009cff",
+    color: "#45986cff",
   },
   optionSubLabel: {
     fontSize: 12,
@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: "#51009cff",
+    backgroundColor: "#45986cff",
     justifyContent: "center",
     alignItems: "center",
     marginHorizontal: 10,

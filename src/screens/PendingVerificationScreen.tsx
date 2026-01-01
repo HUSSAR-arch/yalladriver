@@ -131,7 +131,7 @@ export default function PendingVerificationScreen({
         {/* Icon Container with Dynamic Margins */}
         <View style={[styles.iconContainer, alignStyle.iconMargin]}>
           {state === "COMPLETED" ? (
-            <CheckCircle2 color="#51009cff" size={28} />
+            <CheckCircle2 color="#45986cff" size={28} />
           ) : state === "ACTION_REQUIRED" ? (
             <View style={styles.actionIcon}>
               <Icon color="white" size={18} />
@@ -144,7 +144,7 @@ export default function PendingVerificationScreen({
           <View
             style={[
               styles.line,
-              isCompleted && { backgroundColor: "#51009cff" },
+              isCompleted && { backgroundColor: "#45986cff" },
             ]}
           />
         </View>
@@ -167,7 +167,7 @@ export default function PendingVerificationScreen({
 
         {state === "ACTION_REQUIRED" && (
           // --- 5. DYNAMIC CHEVRON ---
-          <ChevronIcon color="#51009cff" size={24} />
+          <ChevronIcon color="#45986cff" size={24} />
         )}
       </TouchableOpacity>
     );
@@ -182,7 +182,7 @@ export default function PendingVerificationScreen({
         }
       >
         <View style={styles.header}>
-          <ShieldAlert size={48} color="#51009cff" />
+          <ShieldAlert size={48} color="#45986cff" />
           <Text style={styles.headerTitle}>
             {t("verificationPending") || "Verification Required"}
           </Text>
@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
     width: 30,
   },
   actionIcon: {
-    backgroundColor: "#51009cff",
+    backgroundColor: "#45986cff",
     width: 28,
     height: 28,
     borderRadius: 14,

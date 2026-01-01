@@ -110,7 +110,7 @@ export default function TopUpScreen({ navigation }: any) {
       <View style={styles.content}>
         {isScanned ? (
           <View style={styles.centerBox}>
-            <CheckCircle2 size={80} color="#51009cff" />
+            <CheckCircle2 size={80} color="#45986cff" />
             <Text style={styles.successTitle}>
               {t("success") || "Success!"}
             </Text>
@@ -138,7 +138,7 @@ export default function TopUpScreen({ navigation }: any) {
             </Text>
 
             <View style={{ flexDirection: "row", gap: 10, marginBottom: 20 }}>
-              <ActivityIndicator color="#51009cff" />
+              <ActivityIndicator color="#45986cff" />
               <Text style={{ color: "gray", fontFamily: "Tajawal-Regular" }}>
                 {t("waitingScan")}
               </Text>
@@ -158,7 +158,7 @@ export default function TopUpScreen({ navigation }: any) {
         ) : (
           <View style={styles.inputContainer}>
             <View style={styles.iconCircle}>
-              <Wallet size={40} color="#51009cff" />
+              <Wallet size={40} color="#45986cff" />
             </View>
             <Text style={styles.label}>
               {t("enterAmount") || "Amount to Deposit (DZD)"}
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   generateBtn: {
-    backgroundColor: "#51009cff",
+    backgroundColor: "#45986cff",
     width: "100%",
     padding: 15,
     borderRadius: 12,
@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
   successTitle: {
     fontSize: 24,
     // Removed fontWeight: bold
-    color: "#51009cff",
+    color: "#45986cff",
     marginTop: 20,
     marginBottom: 10,
     // FONT UPDATE
