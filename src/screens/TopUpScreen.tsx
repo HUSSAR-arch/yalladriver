@@ -10,6 +10,10 @@ import {
   SafeAreaView,
   Keyboard,
   Vibration,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
 } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { supabase } from "../lib/supabase";
@@ -18,8 +22,13 @@ import {
   ArrowRight,
   Wallet,
   CheckCircle2,
+  Copy,
+  X,
 } from "lucide-react-native";
 import { useLanguage } from "../context/LanguageContext";
+
+// --- PRESET AMOUNTS ---
+const PRESETS = [500, 1000, 2000, 5000];
 
 export default function TopUpScreen({ navigation }: any) {
   const { t, language } = useLanguage();
@@ -32,6 +41,7 @@ export default function TopUpScreen({ navigation }: any) {
 
   const isRTL = language === "ar";
   const flexDir = isRTL ? "row-reverse" : "row";
+  const textAlign = isRTL ? "right" : "left";
 
   // 1. Generate Code
   const handleGenerate = async () => {
@@ -92,244 +102,416 @@ export default function TopUpScreen({ navigation }: any) {
     };
   }, [voucher]);
 
+  const handlePresetPress = (val: number) => {
+    setAmount(val.toString());
+    Keyboard.dismiss();
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={[styles.header, { flexDirection: flexDir }]}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+
+      {/* --- HEADER (Matches WalletScreen) --- */}
+      <View style={[styles.headerContainer, { flexDirection: flexDir }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          // FIX: Apply transform to the button container
-          style={[styles.backBtn, isRTL && { transform: [{ scaleX: -1 }] }]}
+          style={styles.backBtn}
         >
-          <ArrowLeft size={24} color="#1F2937" />
+          {isRTL ? (
+            <ArrowRight size={24} color="#1F2937" />
+          ) : (
+            <ArrowLeft size={24} color="#1F2937" />
+          )}
         </TouchableOpacity>
-
-        <Text style={styles.title}>{t("topUp") || "Deposit Cash"}</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.headerTitle}>{t("topUp") || "Deposit Cash"}</Text>
+        <View style={{ width: 40 }} /> 
       </View>
 
-      <View style={styles.content}>
-        {isScanned ? (
-          <View style={styles.centerBox}>
-            <CheckCircle2 size={80} color="#45986cff" />
-            <Text style={styles.successTitle}>
-              {t("success") || "Success!"}
-            </Text>
-            <Text style={styles.successText}>
-              {amount} DZD added to your balance.
-            </Text>
-            <TouchableOpacity
-              style={styles.doneBtn}
-              onPress={() => navigation.goBack()}
-            >
-              <Text style={styles.doneBtnText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        ) : voucher ? (
-          <View style={styles.centerBox}>
-            <Text style={styles.instructionText}>{t("scanInstruction")}</Text>
-            <View style={styles.qrContainer}>
-              <QRCode value={voucher.code} size={200} />
-            </View>
-            <Text style={styles.codeText}>{voucher.code}</Text>
-
-            {/* Updated currency display */}
-            <Text style={styles.amountDisplay}>
-              {amount} {t("dinar")}
-            </Text>
-
-            <View style={{ flexDirection: "row", gap: 10, marginBottom: 20 }}>
-              <ActivityIndicator color="#45986cff" />
-              <Text style={{ color: "gray", fontFamily: "Tajawal-Regular" }}>
-                {t("waitingScan")}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {isScanned ? (
+            // --- SUCCESS STATE ---
+            <View style={styles.card}>
+              <View style={styles.successIconBox}>
+                <CheckCircle2 size={60} color="#166534" />
+              </View>
+              <Text style={styles.successTitle}>
+                {t("success") || "Success!"}
               </Text>
-            </View>
-
-            <TouchableOpacity
-              onPress={() => {
-                setVoucher(null);
-                setAmount("");
-              }}
-            >
-              <Text style={{ color: "#ef4444", fontFamily: "Tajawal-Medium" }}>
-                {t("cancel")}
+              <Text style={styles.successText}>
+                {amount} DZD {t("addedToWallet") || "has been added to your wallet."}
               </Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.inputContainer}>
-            <View style={styles.iconCircle}>
-              <Wallet size={40} color="#45986cff" />
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() => navigation.goBack()}
+              >
+                <Text style={styles.primaryBtnText}>{t("done") || "Done"}</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.label}>
-              {t("enterAmount") || "Amount to Deposit (DZD)"}
-            </Text>
-            <TextInput
-              style={[styles.input, { textAlign: "center" }]}
-              placeholder="2000"
-              placeholderTextColor="#9ca3af"
-              keyboardType="numeric"
-              value={amount}
-              onChangeText={setAmount}
-              autoFocus
-            />
-            <TouchableOpacity
-              style={styles.generateBtn}
-              onPress={handleGenerate}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <Text style={styles.generateBtnText}>{t("generateCode")}</Text>
-              )}
-            </TouchableOpacity>
-            <Text style={styles.note}>{t("paymentNote")}</Text>
-          </View>
-        )}
-      </View>
+          ) : voucher ? (
+            // --- QR CODE STATE ---
+            <View style={styles.card}>
+              <Text style={styles.instructionText}>{t("scanInstruction")}</Text>
+              
+              <View style={styles.ticketContainer}>
+                <View style={styles.qrWrapper}>
+                  <QRCode value={voucher.code} size={180} />
+                </View>
+                <View style={styles.ticketDivider} />
+                <View style={styles.codeRow}>
+                  <Text style={styles.codeLabel}>CODE:</Text>
+                  <Text style={styles.codeValue}>{voucher.code}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.amountDisplay}>
+                {amount} <Text style={{ fontSize: 20 }}>DZD</Text>
+              </Text>
+
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color="#45986cff" size="small" />
+                <Text style={styles.waitingText}>{t("waitingScan")}</Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => {
+                  setVoucher(null);
+                  setAmount("");
+                }}
+              >
+                <X size={18} color="#ef4444" style={{ marginRight: 6 }} />
+                <Text style={styles.cancelText}>{t("cancel")}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            // --- INPUT STATE ---
+            <View style={styles.inputWrapper}>
+              
+              <View style={styles.inputCard}>
+                <View style={styles.iconCircle}>
+                  <Wallet size={32} color="#45986cff" />
+                </View>
+                
+                <Text style={styles.label}>
+                  {t("enterAmount") || "Amount to Deposit"}
+                </Text>
+                
+                <View style={[styles.inputRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                  <TextInput
+                    style={[styles.input, { textAlign: 'center' }]}
+                    placeholder="0"
+                    placeholderTextColor="#d1d5db"
+                    keyboardType="numeric"
+                    value={amount}
+                    onChangeText={setAmount}
+                    autoFocus
+                  />
+                  <Text style={styles.currencySuffix}>DZD</Text>
+                </View>
+
+                {/* Quick Presets */}
+                <View style={[styles.presetContainer, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                  {PRESETS.map((val) => (
+                    <TouchableOpacity
+                      key={val}
+                      style={styles.presetChip}
+                      onPress={() => handlePresetPress(val)}
+                    >
+                      <Text style={styles.presetText}>{val}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.footer}>
+                <TouchableOpacity
+                  style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
+                  onPress={handleGenerate}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>
+                      {t("generateCode") || "Generate Code"}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+                <Text style={styles.note}>{t("paymentNote")}</Text>
+              </View>
+            </View>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8fafc" },
-  header: {
-    padding: 25,
+  
+  // Header matched to WalletScreen
+  headerContainer: {
     alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: 30,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+    backgroundColor: "#f8fafc",
+    zIndex: 10,
+  },
+  headerTitle: {
+    marginTop: 30,
+    fontSize: 16,
+    color: "#1F2937",
+    fontFamily: "Tajawal-Bold",
   },
   backBtn: {
-    width: 40,
     marginTop: 30,
+    width: 40,
     height: 40,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "white",
     borderRadius: 20,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
-  title: {
-    fontSize: 16,
-    marginTop: 30,
-    paddingHorizontal: 10,
-    // FONT UPDATE
-    fontFamily: "Tajawal-Bold",
-    color: "#1F2937",
+
+  scrollContent: {
+    flexGrow: 1,
+    padding: 20,
+    justifyContent: "center",
   },
-  content: { flex: 1, padding: 20, justifyContent: "center" },
-  inputContainer: {
+
+  // --- Cards & Containers ---
+  card: {
     backgroundColor: "white",
+    borderRadius: 24,
     padding: 30,
-    borderRadius: 20,
     alignItems: "center",
-    elevation: 6,
-    marginBottom: 230,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
   },
+  inputWrapper: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  inputCard: {
+    backgroundColor: "white",
+    borderRadius: 24,
+    padding: 30,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+    marginBottom: 30,
+  },
+
+  // --- Input Styling ---
   iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#f3e8ff",
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#f0fff5ff",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 20,
   },
   label: {
-    fontSize: 16,
-    color: "#4b5563",
+    fontSize: 14,
+    color: "#6b7280",
     marginBottom: 10,
-    // FONT UPDATE
     fontFamily: "Tajawal-Medium",
   },
+  inputRow: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    marginBottom: 25,
+    borderBottomWidth: 1,
+    borderColor: "#e5e7eb",
+    paddingBottom: 5,
+  },
   input: {
-    fontSize: 40,
-    // FONT UPDATE
+    fontSize: 48,
     fontFamily: "Tajawal-Bold",
     color: "#1F2937",
-    width: "100%",
-    borderBottomWidth: 2,
+    minWidth: 100,
+    padding: 0,
+  },
+  currencySuffix: {
+    fontSize: 20,
+    color: "#9ca3af",
+    fontFamily: "Tajawal-Medium",
+    marginTop: 12, // Visual alignment with huge text
+    marginHorizontal: 8,
+  },
+
+  // --- Presets ---
+  presetContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 10,
+  },
+  presetChip: {
+    backgroundColor: "#f3f4f6",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
     borderColor: "#e5e7eb",
-    paddingBottom: 10,
-    marginBottom: 30,
   },
-  generateBtn: {
-    backgroundColor: "#45986cff",
+  presetText: {
+    color: "#4b5563",
+    fontFamily: "Tajawal-Bold",
+    fontSize: 14,
+  },
+
+  // --- Buttons ---
+  footer: {
     width: "100%",
-    padding: 15,
-    borderRadius: 12,
-    alignItems: "center",
   },
-  generateBtnText: {
+  primaryBtn: {
+    backgroundColor: "#1F2937", // Matches Wallet Dark Button or Green "#45986cff"
+    width: "100%",
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: "center",
+    shadowColor: "#45986cff",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  primaryBtnText: {
     color: "white",
-    fontSize: 18,
-    // FONT UPDATE
+    fontSize: 16,
     fontFamily: "Tajawal-Bold",
   },
   note: {
     marginTop: 20,
     textAlign: "center",
-    color: "gray",
+    color: "#9ca3af",
     fontSize: 12,
-    // FONT UPDATE
     fontFamily: "Tajawal-Regular",
   },
-  centerBox: {
-    alignItems: "center",
-    backgroundColor: "white",
-    padding: 30,
-    marginBottom: 135,
-    borderRadius: 20,
-    elevation: 4,
-  },
+
+  // --- QR & Ticket ---
   instructionText: {
     fontSize: 16,
-    marginBottom: 20,
+    marginBottom: 25,
     textAlign: "center",
-    // FONT UPDATE
+    color: "#374151",
     fontFamily: "Tajawal-Medium",
   },
-  qrContainer: {
-    padding: 10,
-    backgroundColor: "white",
-    borderRadius: 10,
+  ticketContainer: {
+    backgroundColor: "#f9fafb",
+    padding: 15,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    alignItems: "center",
     marginBottom: 20,
   },
-  codeText: {
-    fontSize: 14,
-    color: "gray",
+  qrWrapper: {
+    padding: 10,
+    backgroundColor: "white",
+    borderRadius: 8,
+  },
+  ticketDivider: {
+    width: "100%",
+    height: 1,
+    backgroundColor: "#e5e7eb",
+    marginVertical: 15,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    borderRadius: 1,
+  },
+  codeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  codeLabel: {
+    fontSize: 12,
+    color: "#9ca3af",
+    fontFamily: "Tajawal-Bold",
+    letterSpacing: 1,
+  },
+  codeValue: {
+    fontSize: 18,
     fontFamily: "monospace",
-    marginBottom: 5,
+    color: "#1F2937",
+    fontWeight: "700",
   },
   amountDisplay: {
-    fontSize: 32,
-    // FONT UPDATE
+    fontSize: 36,
     fontFamily: "Tajawal-Bold",
     color: "#1F2937",
+    marginBottom: 5,
+  },
+  loadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 25,
+    backgroundColor: "#f0fdf4",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  waitingText: {
+    color: "#166534",
+    fontFamily: "Tajawal-Medium",
+    fontSize: 13,
+  },
+  cancelBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+  },
+  cancelText: {
+    color: "#ef4444",
+    fontFamily: "Tajawal-Bold",
+    fontSize: 15,
+  },
+
+  // --- Success State ---
+  successIconBox: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#dcfce7",
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 20,
   },
   successTitle: {
     fontSize: 24,
-    // Removed fontWeight: bold
-    color: "#45986cff",
-    marginTop: 20,
+    color: "#166534",
     marginBottom: 10,
-    // FONT UPDATE
     fontFamily: "Tajawal-Bold",
   },
   successText: {
     textAlign: "center",
     color: "#4b5563",
     marginBottom: 30,
-    // FONT UPDATE
     fontFamily: "Tajawal-Regular",
-  },
-  doneBtn: {
-    backgroundColor: "#1F2937",
-    paddingHorizontal: 40,
-    paddingVertical: 12,
-    borderRadius: 25,
-  },
-  doneBtnText: {
-    color: "white",
-    // FONT UPDATE
-    fontFamily: "Tajawal-Bold",
+    fontSize: 15,
   },
 });

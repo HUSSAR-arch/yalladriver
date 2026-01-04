@@ -525,9 +525,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8fafc" },
   headerContainer: {
     alignItems: "center",
-    marginBottom: 10,
-    marginTop: 10,
-    paddingHorizontal: 20,
+    marginBottom: 0, // Changed from 20 to 0 (or keep small spacing)
+    paddingTop: 30,
+    paddingHorizontal: 20, // <--- ADD THIS to align with ScrollView content
+    backgroundColor: "#f8fafc", // Optional: ensures background matches screen if content scrolls under
+    zIndex: 10, // Optional: ensures it stays on top visually
   },
   backBtn: {
     padding: 5,
@@ -535,7 +537,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     marginTop: 30,
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: "Tajawal-Bold",
     color: "#1F2937",
     marginHorizontal: 15,

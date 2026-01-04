@@ -166,11 +166,11 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
+    shouldShowAlert: false, // Don't interrupt the driver
+    shouldPlaySound: false, // Your app already plays the custom ring tone
     shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
+    shouldShowBanner: false,
+    shouldShowList: false,
   }),
 });
 
@@ -1276,7 +1276,6 @@ export default function DriverDashboard({ session, navigation }: any) {
         }),
       });
 
-      // ✅ 1. Parse the error message from the backend
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || "Failed to update status");
@@ -1285,7 +1284,9 @@ export default function DriverDashboard({ session, navigation }: any) {
       setActiveRide((prev: any) => ({ ...prev, status }));
 
       if (status === RideStatus.COMPLETED) {
-        Alert.alert(t("success"), `Earned ${activeRide.fare_estimate} DZD`);
+        // ❌ REMOVE THIS ALERT to prevent it from blocking the modal
+        // Alert.alert(t("success"), `Earned ${activeRide.fare_estimate} DZD`);
+
         setActiveRide(null);
         setPassengerDetails(null);
         setRouteCoords([]);
@@ -1293,7 +1294,6 @@ export default function DriverDashboard({ session, navigation }: any) {
       }
     } catch (error: any) {
       console.error("Update Status Error:", error);
-      // ✅ 2. Show the ACTUAL error message
       Alert.alert("Update Failed", error.message);
     }
   };
@@ -1375,6 +1375,47 @@ export default function DriverDashboard({ session, navigation }: any) {
     setPassengerDetails(null);
     setRouteCoords([]);
     fetchBalance();
+  };
+
+  const handleNoShow = async () => {
+    if (!activeRide) return;
+
+    try {
+      const response = await fetch(
+        "https://my-ride-service.onrender.com/rides/cancel/no-show",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rideId: activeRide.id,
+            driverId: session.user.id,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to charge no-show");
+      }
+
+      // Success Sequence
+      Alert.alert(
+        t("success") || "Success",
+        t("noShowCharged") || "No-show fee charged (150 DZD). Ride cancelled."
+      );
+
+      // Reset UI
+      setActiveRide(null);
+      setPassengerDetails(null);
+      setRouteCoords([]);
+      setWaitTime(0);
+
+      // Update Balance (Driver gets paid the fee minus commission)
+      fetchBalance();
+    } catch (error: any) {
+      console.error("No Show Error:", error);
+      Alert.alert("Error", error.message);
+    }
   };
 
   // 1. SAVE INFO before clearing activeRide
@@ -1937,16 +1978,15 @@ export default function DriverDashboard({ session, navigation }: any) {
                   style={{ marginTop: 15, alignItems: "center" }}
                   onPress={() => {
                     Alert.alert(
-                      "Charge No Show?",
-                      "Passenger will be charged a cancellation fee.",
+                      t("chargeNoShow") || "Charge No Show?",
+                      t("confirmNoShow") ||
+                        "Passenger will be charged 150 DA. This action cannot be undone.",
                       [
-                        { text: "Cancel", style: "cancel" },
+                        { text: t("cancel") || "Cancel", style: "cancel" },
                         {
-                          text: "Charge",
+                          text: t("charge") || "Charge Penalty",
                           style: "destructive",
-                          onPress: async () => {
-                            // Your no-show logic here
-                          },
+                          onPress: handleNoShow, // <--- ✅ CONNECT THE FUNCTION HERE
                         },
                       ]
                     );
@@ -1955,7 +1995,7 @@ export default function DriverDashboard({ session, navigation }: any) {
                   <Text
                     style={{ color: "#DC2626", fontFamily: "Tajawal_700Bold" }}
                   >
-                    Charge No Show
+                    {t("chargeNoShow") || "Charge No Show (150 DA)"}
                   </Text>
                 </TouchableOpacity>
               )}

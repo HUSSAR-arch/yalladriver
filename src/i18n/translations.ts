@@ -1,5 +1,46 @@
 export const translations = {
   en: {
+    // Ride Details & History
+    rideId: "Ride ID",
+    dateAndTime: "Date & Time",
+    totalFare: "Total Fare",
+    tripRoute: "Trip Route",
+    payment: "Payment Method", // Used in RideDetails
+    payWithBalance: "Pay with Balance",
+    paid: "Paid",
+    pending: "Pending",
+    reportIssue: "Report an issue with this ride",
+    
+    // History Screen Filters & Actions
+    myActivity: "My Activity",
+    scheduled: "Scheduled",
+    all: "All",
+    completed: "Completed",
+    cancelled: "Cancelled",
+    acceptJob: "Accept Job",
+    confirmSchedule: "Are you sure you want to accept this scheduled ride?",
+    yourRequest: "Your Request",
+    assignedToYou: "Assigned to You",
+    tripDate: "Trip Date",
+    tag_polite: "Polite",
+    leaveComment: "Leave a comment (optional)...",
+    whatLiked: "What went well?",
+    submitReview: "Submit Review",
+    // ... existing keys ...
+    rateUser: "Rate {name}",
+    howWasPassenger: "How was the passenger?",
+
+    // PASSENGER TAGS (Positive)
+    tag_punctual: "Punctual",
+    tag_neat: "Neat & Clean",
+    tag_quiet: "Quiet",
+    tag_patient: "Patient",
+
+    // PASSENGER TAGS (Negative)
+    tag_late_pickup: "Made me wait",
+    tag_messy: "Left Trash",
+    tag_slam_door: "Slammed Door",
+    tag_nav_demand: "Backseat Driving",
     newRideRequest: "New Ride Request",
     enRoute: "En Route",
     waiting: "Waiting",
@@ -151,7 +192,7 @@ export const translations = {
     acceptance: "Acceptance",
 
     // Top Up / Wallet Missing Keys
-    depositCash: "Deposit Cash (QR)",
+    depositCash: "Deposit Cash",
     enterAmount: "Amount to Deposit (DZD)",
     generateCode: "Generate Code",
     scanInstruction: "Show this code to a Yassir Agent",
@@ -223,6 +264,47 @@ export const translations = {
     tabEarnings: "EARNINGS",
   },
   ar: {
+    // Ride Details & History
+    rideId: "رقم الرحلة",
+    dateAndTime: "التاريخ والوقت",
+    totalFare: "إجمالي الأجرة",
+    tripRoute: "مسار الرحلة",
+    payment: "طريقة الدفع",
+    payWithBalance: "دفع بالرصيد",
+    paid: "مدفوع",
+    pending: "قيد الانتظار",
+    reportIssue: "الإبلاغ عن مشكلة في هذه الرحلة",
+
+    // History Screen Filters & Actions
+    myActivity: "نشاطي",
+    scheduled: "مجدولة",
+    all: "الكل",
+    completed: "مكتملة",
+    cancelled: "ملغاة",
+    acceptJob: "قبول المهمة",
+    confirmSchedule: "هل أنت متأكد أنك تريد قبول هذه الرحلة المجدولة؟",
+    yourRequest: "طلبك",
+    assignedToYou: "مسندة إليك",
+    tripDate: "تاريخ الرحلة",
+    tag_polite: "مهذب",
+    leaveComment: "اترك تعليقاً (اختياري)...",
+    whatLiked: "ما الذي أعجبك؟",
+    submitReview: "إرسال التقييم",
+
+    rateUser: "قيم {name}",
+    howWasPassenger: "كيف كان الراكب؟",
+
+    // PASSENGER TAGS (Positive)
+    tag_punctual: "دقيق في الموعد",
+    tag_neat: "نظيف ومرتب",
+    tag_quiet: "هادئ",
+    tag_patient: "صبور",
+
+    // PASSENGER TAGS (Negative)
+    tag_late_pickup: "جعلني أنتظر",
+    tag_messy: "ترك مخلفات",
+    tag_slam_door: "صفق الباب بقوة",
+    tag_nav_demand: "تدخل في القيادة",
     newRideRequest: "طلب رحلة جديدة",
     enRoute: "في الطريق",
     waiting: "في الانتظار",
@@ -441,6 +523,32 @@ export const translations = {
   },
 
   fr: {
+    // Ride Details & History
+    rideId: "ID Course",
+    dateAndTime: "Date et Heure",
+    totalFare: "Tarif Total",
+    tripRoute: "Itinéraire",
+    payment: "Méthode de Paiement",
+    payWithBalance: "Payer avec le solde",
+    paid: "Payé",
+    pending: "En attente",
+    reportIssue: "Signaler un problème",
+
+    // History Screen Filters & Actions
+    myActivity: "Mon Activité",
+    scheduled: "Planifié",
+    all: "Tout",
+    completed: "Terminé",
+    cancelled: "Annulé",
+    acceptJob: "Accepter la mission",
+    confirmSchedule: "Voulez-vous vraiment accepter cette course planifiée ?",
+    yourRequest: "Votre Demande",
+    assignedToYou: "Attribué à vous",
+    tripDate: "Date du trajet",
+    tag_polite: "Poli",
+    leaveComment: "Laissez un commentaire (facultatif)...",
+    whatLiked: "Qu'avez-vous apprécié ?",
+    submitReview: "Envoyer l'avis",
     newRideRequest: "Nouvelle demande de course",
     enRoute: "En route",
     waiting: "En attente",

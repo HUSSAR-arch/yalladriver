@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import DriverRideDetails from "./src/screens/DriverRideDetails";
 import MyDocumentsScreen from "./src/screens/MyDocumentsScreen";
 import { NavigationContainer } from "@react-navigation/native";
 import SettingsScreen from "./src/screens/SettingsScreen";
@@ -224,6 +225,11 @@ function MainApp() {
             <Stack.Screen
               name="MyDocuments"
               component={MyDocumentsScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="DriverRideDetails"
+              component={DriverRideDetails}
               options={{ headerShown: false }}
             />
           </>

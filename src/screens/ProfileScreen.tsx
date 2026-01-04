@@ -166,18 +166,8 @@ export default function ProfileScreen({ navigation, route }: any) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        contentContainerStyle={{ flexGrow: 1, padding: 20 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={["#FFC107"]}
-          />
-        }
-      >
-        {/* --- Header --- */}
-        <View style={[styles.headerContainer, alignStyle.flexDirectionRow]}>
+
+      <View style={[styles.headerContainer, alignStyle.flexDirectionRow]}>
           <TouchableOpacity
             onPress={() =>
               navigation.canGoBack()
@@ -192,6 +182,18 @@ export default function ProfileScreen({ navigation, route }: any) {
             {t("profileTitle") || "My Profile"}
           </Text>
         </View>
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1, padding: 20 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#FFC107"]}
+          />
+        }
+      >
+        {/* --- Header --- */}
+        
 
         {errorMsg ? (
           <View style={styles.errorContainer}>
@@ -357,7 +359,14 @@ export default function ProfileScreen({ navigation, route }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8fafc" },
   centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  headerContainer: { alignItems: "center", marginBottom: 20, marginTop: 10 },
+  headerContainer: {
+    alignItems: "center",
+    marginBottom: 0, // Changed from 20 to 0 (or keep small spacing)
+    paddingTop: 30,
+    paddingHorizontal: 20, // <--- ADD THIS to align with ScrollView content
+    backgroundColor: "#f8fafc", // Optional: ensures background matches screen if content scrolls under
+    zIndex: 10, // Optional: ensures it stays on top visually
+  },
   headerTitle: {
     marginTop: 30,
     fontSize: 16,

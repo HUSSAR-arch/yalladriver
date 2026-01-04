@@ -92,7 +92,6 @@ export default function MenuScreen() {
           {/* PROFILE INFO */}
 
           <View style={styles.divider} />
-
           {/* MENU ITEMS LIST */}
           <ScrollView contentContainerStyle={styles.menuItemsContainer}>
             <MenuItem
@@ -186,7 +185,7 @@ const styles = StyleSheet.create({
     gap: 15,
   },
   menuItemText: {
-    fontSize: 24,
+    fontSize: 18,
     color: "#45986cff",
     flex: 1,
     // --- FONT: Medium ---
